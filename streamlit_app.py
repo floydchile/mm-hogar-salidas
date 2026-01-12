@@ -6,7 +6,7 @@ st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide")
 
 # Configurar Supabase
 SUPABASE_URL = "https://nijzonhfxyihpgozinge.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pamp6b25oZnh5aWhwZ296aW5nZSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzAyNDAwMDAwLCJleHAiOjE3MzM5MzYwMDB9.DUMMY"
+SUPABASE_KEY = "sb_secret_UWJfcJihs2cvqwO4xaKUkA_hIbJfpcS"
 
 @st.cache_resource
 def init_supabase():
@@ -136,3 +136,4 @@ with tab3:
         )
     else:
         st.write("Sin ventas registradas")
+
