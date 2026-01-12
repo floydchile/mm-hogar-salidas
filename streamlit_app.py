@@ -1,12 +1,17 @@
 import streamlit as st
 from supabase import create_client, Client
 from datetime import datetime
+import os
 
 st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide")
 
-# Configurar Supabase
-SUPABASE_URL = "https://nijzonhfxyihpgozinge.supabase.co"
-SUPABASE_KEY = "sb_secret_UWJfcJihs2cvqwO4xaKUkA_hIbJfpcS"
+# Configurar Supabase desde variables de entorno
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://nijzonhfxyihpgozinge.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_KEY:
+    st.error("⚠️ Error: No hay configuración de base de datos")
+    st.stop()
 
 @st.cache_resource
 def init_supabase():
@@ -14,9 +19,10 @@ def init_supabase():
 
 try:
     supabase: Client = init_supabase()
-except:
-    st.error("Error conectando a base de datos")
+except Exception as e:
+    st.error(f"Error conectando a base de datos: {str(e)}")
     st.stop()
+
 
 if 'usuario' not in st.session_state:
     st.session_state.usuario = None
@@ -136,4 +142,5 @@ with tab3:
         )
     else:
         st.write("Sin ventas registradas")
+
 
