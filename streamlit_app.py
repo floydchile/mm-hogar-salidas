@@ -42,7 +42,8 @@ with tab2:
         opciones = [f"{p['sku']} - {p['nombre']}" for p in st.session_state.productos]
         producto = st.selectbox("Producto:", opciones)
         cantidad = st.number_input("Cantidad:", min_value=1, value=1)
-        canal = st.selectbox("Canal:", ["Marketplace 1", "Marketplace 2", "Web", "Directo"])
+        canal = st.selectbox("Canal:", ["Mercadolibre", "Falabella", "Walmart", "Hites", "Paris", "Ripley", "Directo - Web", "Directo - WS", "Directo - Retiro"])
+
         
         if st.button("Guardar Venta"):
             if st.session_state.usuario:
@@ -65,3 +66,4 @@ with tab3:
     st.write(f"**Total ventas: {len(st.session_state.salidas)}**")
     for venta in st.session_state.salidas:
         st.write(f"- {venta['producto']} x{venta['cantidad']} | {venta['canal']} | {venta['usuario']}")
+
