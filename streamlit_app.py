@@ -65,72 +65,98 @@ def agregar_salida(sku, cantidad, canal, usuario):
     except:
         return False
 
+# Sidebar con usuario
 with st.sidebar:
-    st.title("👤 Usuario")
-    usuario = st.text_input("Tu nombre:")
+    st.markdown("### 👤 Usuario")
+    usuario = st.text_input("Ingresa tu nombre:", placeholder="Tu nombre aquí")
     if usuario:
         st.session_state.usuario = usuario
-        st.success(f"¡Bienvenido {usuario}!")
+        st.success(f"✅ Bienvenido {usuario}!")
 
-st.title("📦 M&M Hogar - Sistema de Salidas")
-st.write("Sistema de registro de ventas con base de datos")
+# Título responsive
+col1, col2 = st.columns([3, 1])
+with col1:
+    st.markdown("# 📦 M&M Hogar")
+    st.markdown("**Sistema de Salidas**")
+with col2:
+    st.write("")
 
-tab1, tab2, tab3 = st.tabs(["Productos", "Registrar Venta", "Historial"])
+st.markdown("Sistema de registro de ventas con base de datos")
+st.divider()
+
+# Tabs
+tab1, tab2, tab3 = st.tabs(["📦 Productos", "📤 Registrar Venta", "📊 Historial"])
 
 with tab1:
-    st.header("Gestión de Productos")
-    sku = st.text_input("SKU", placeholder="BS-001")
-    nombre = st.text_input("Nombre", placeholder="Babysec Premium")
+    st.subheader("Gestión de Productos")
     
-    if st.button("Agregar Producto"):
+    col1, col2 = st.columns(2)
+    with col1:
+        sku = st.text_input("SKU", placeholder="BS-001")
+    with col2:
+        nombre = st.text_input("Nombre del Producto", placeholder="Babysec Premium")
+    
+    if st.button("✅ Agregar Producto", use_container_width=True):
         if sku and nombre:
             if agregar_producto(sku, nombre):
-                st.success("✅ Producto agregado")
+                st.success("✅ Producto agregado correctamente")
                 st.rerun()
             else:
-                st.error("Error al agregar")
+                st.error("❌ Error al agregar el producto")
         else:
-            st.warning("Completa todos los campos")
+            st.warning("⚠️ Completa todos los campos")
     
+    st.divider()
     productos = cargar_productos()
-    st.write(f"**Total productos: {len(productos)}**")
-    for p in productos:
-        st.write(f"- {p['sku']}: {p['nombre']}")
+    st.info(f"📊 Total productos: **{len(productos)}**")
+    
+    if productos:
+        for p in productos:
+            st.write(f"• **{p['sku']}** - {p['nombre']}")
+    else:
+        st.write("Sin productos registrados")
 
 with tab2:
-    st.header("Registrar Venta")
+    st.subheader("Registrar Venta")
     productos = cargar_productos()
     
     if productos:
         opciones = [f"{p['sku']} - {p['nombre']}" for p in productos]
-        producto_sel = st.selectbox("Producto:", opciones)
-        cantidad = st.number_input("Cantidad:", min_value=1, value=1)
-        canal = st.selectbox("Canal:", ["Mercadolibre", "Falabella", "Walmart", "Hites", "Paris", "Ripley", "Directo - Web", "Directo - WS", "Directo - Retiro"])
         
-        if st.button("Guardar Venta"):
+        col1, col2 = st.columns(2)
+        with col1:
+            producto_sel = st.selectbox("Selecciona Producto:", opciones, key="producto")
+        with col2:
+            cantidad = st.number_input("Cantidad:", min_value=1, value=1)
+        
+        canal = st.selectbox("Canal de Venta:", ["Mercadolibre", "Falabella", "Walmart", "Hites", "Paris", "Ripley", "Directo - Web", "Directo - WS", "Directo - Retilo"])
+        
+        if st.button("💾 Guardar Venta", use_container_width=True, type="primary"):
             if st.session_state.usuario:
                 sku = producto_sel.split(" - ")[0]
                 if agregar_salida(sku, cantidad, canal, st.session_state.usuario):
-                    st.success(f"✅ Venta registrada")
+                    st.success(f"✅ Venta registrada por {st.session_state.usuario}")
                     st.balloons()
                     st.rerun()
                 else:
-                    st.error("Error al registrar")
+                    st.error("❌ Error al registrar la venta")
             else:
-                st.warning("Ingresa tu nombre primero")
+                st.warning("⚠️ Ingresa tu nombre en la barra lateral primero")
     else:
-        st.warning("Agrega productos primero")
+        st.warning("⚠️ Agrega productos primero en la pestaña 'Productos'")
 
 with tab3:
-    st.header("Historial de Ventas")
+    st.subheader("Historial de Ventas")
     salidas = cargar_salidas()
     
-    st.write(f"**Total ventas: {len(salidas)}**")
+    st.info(f"📊 Total ventas: **{len(salidas)}**")
     
     if salidas:
+        st.divider()
         for venta in reversed(salidas):
-            st.write(f"**{venta['fecha'][:10]}** | {venta['sku']} x{venta['cantidad']} | {venta['canal']} | {venta['usuario']}")
+            st.write(f"📅 **{venta['fecha'][:10]}** | 📦 {venta['sku']} x{venta['cantidad']} | 🏪 {venta['canal']} | 👤 {venta['usuario']}")
         
+        st.divider()
         csv_data = "fecha,sku,cantidad,canal,usuario\n"
         for venta in salidas:
             csv_data += f"{venta['fecha']},{venta['sku']},{venta['cantidad']},{venta['canal']},{venta['usuario']}\n"
@@ -138,9 +164,8 @@ with tab3:
         st.download_button(
             "📥 Descargar CSV",
             csv_data,
-            file_name=f"salidas_{datetime.now().strftime('%Y%m%d')}.csv"
+            file_name=f"salidas_{datetime.now().strftime('%Y%m%d')}.csv",
+            use_container_width=True
         )
     else:
         st.write("Sin ventas registradas")
-
-
