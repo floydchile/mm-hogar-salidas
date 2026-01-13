@@ -213,11 +213,11 @@ with tab1:
     with col3:
         und_x_embalaje = st.number_input("UND x Embalaje", min_value=1, value=st.session_state.get('und_seleccionado', 1), key="und_input")
     
-    # Stock actual (solo lectura) y cantidad a agregar
+    # Stock actual y cantidad a agregar
     col1_stock, col2_stock = st.columns(2)
     
     with col1_stock:
-        st.number_input("Stock Actual", min_value=0, value=st.session_state.get('stock_actual_seleccionado', 0), key="stock_actual_input", disabled=True)
+        st.metric("Stock Actual", st.session_state.get('stock_actual_seleccionado', 0))
     
     with col2_stock:
         cantidad = st.number_input("Cantidad a Agregar", min_value=1, value=1, key="cantidad_input")
