@@ -46,7 +46,8 @@ def producto_existe(sku):
     except:
         return False
 
-def cargar_productos():
+def cargar_productos_sin_cache():
+    """Carga productos SIN CACHE para búsqueda en tiempo real"""
     try:
         response = supabase.table("productos").select("*").order("creado_en", desc=True).execute()
         return response.data if response.data else []
@@ -170,15 +171,16 @@ with tab1:
     def actualizar_buscar():
         st.session_state.query_buscar = st.session_state.buscador_input
     
-    # Buscador con callback
-    st.text_input("Buscar SKU o nombre:", 
+    # Buscador con callback - sin key para forzar re-render
+    query_input = st.text_input("Buscar SKU o nombre:", 
                  placeholder="Escribe SKU o parte del nombre...", 
                  key="buscador_input",
                  on_change=actualizar_buscar)
     
-    productos = cargar_productos()
+    # Cargar productos SIN CACHE para búsqueda en tiempo real
+    productos = cargar_productos_sin_cache()
     
-    # Filtrar productos usando session state
+    # Filtrar productos usando la búsqueda actual
     query_buscar = st.session_state.query_buscar
     if query_buscar:
         productos_filtrados = [p for p in productos if query_buscar.upper() in p["sku"].upper() or query_buscar.lower() in p["nombre"].lower()]
@@ -188,7 +190,7 @@ with tab1:
     # Mostrar resultados EN TIEMPO REAL
     if query_buscar:
         if productos_filtrados:
-            st.markdown("**Resultados encontrados:**")
+            st.markdown(f"**✅ {len(productos_filtrados)} resultado(s) encontrado(s):**")
             for p in productos_filtrados[:10]:
                 col1, col2 = st.columns([3, 1])
                 with col1:
@@ -206,7 +208,7 @@ with tab1:
                     st.success(f"Seleccionado: {p['sku']}")
                     st.rerun()
         else:
-            st.info("❌ Producto no encontrado. Puedes agregarlo en el formulario de abajo como nuevo producto.")
+            st.warning("❌ Producto no encontrado. Puedes agregarlo en el formulario de abajo como nuevo producto.")
     
     st.divider()
     
@@ -276,7 +278,7 @@ with tab1:
     st.divider()
     
     # Tabla de productos
-    productos = cargar_productos()
+    productos = cargar_productos_sin_cache()
     
     if productos:
         st.info(f"Total productos: **{len(productos)}**")
@@ -298,7 +300,7 @@ with tab1:
 
 with tab2:
     st.subheader("Registrar Venta")
-    productos = cargar_productos()
+    productos = cargar_productos_sin_cache()
     
     if productos:
         opciones = [f"{p['sku']} - {p['nombre']}" for p in productos]
@@ -399,7 +401,7 @@ with tab4:
 
 with tab5:
     st.subheader("Resumen de Stock Actual")
-    productos = cargar_productos()
+    productos = cargar_productos_sin_cache()
     
     if productos:
         total_productos = len(productos)
