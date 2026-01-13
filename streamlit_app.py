@@ -34,9 +34,6 @@ except Exception as e:
 if 'usuario' not in st.session_state:
     st.session_state.usuario = None
 
-if 'reset_search' not in st.session_state:
-    st.session_state.reset_search = False
-
 # ============= FUNCIONES =============
 
 def producto_existe(sku):
@@ -166,19 +163,18 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["Inventario", "Registrar Venta", "Histor
 with tab1:
     st.subheader("Gestion de Inventario")
     
-    # Usar key dinamico que cambia al resetear
-    buscador_key = f"buscador_{st.session_state.get('reset_search', 0)}"
-    query = st.text_input("Buscar SKU o nombre:", placeholder="Escribe SKU o parte del nombre...", key=buscador_key)
+    # Buscador en tiempo real (sin necesidad de Enter)
+    query = st.text_input("Buscar SKU o nombre:", placeholder="Escribe SKU o parte del nombre...", key="buscador_input")
     
     productos = cargar_productos()
     
-    # Filtrar productos en tiempo real
+    # Filtrar productos en tiempo real mientras escribes
     if query:
         productos_filtrados = [p for p in productos if query.upper() in p["sku"].upper() or query.lower() in p["nombre"].lower()]
     else:
         productos_filtrados = []
     
-    # Mostrar resultados del buscador
+    # Mostrar resultados EN TIEMPO REAL (sin Enter)
     if query:
         if productos_filtrados:
             st.markdown("**Resultados encontrados:**")
@@ -197,7 +193,7 @@ with tab1:
                     st.success(f"Seleccionado: {p['sku']}")
                     st.rerun()
         else:
-            st.warning("Producto no encontrado. Puedes agregarlo en el formulario de abajo.")
+            st.info("❌ Producto no encontrado. Puedes agregarlo en el formulario de abajo como nuevo producto.")
     
     st.divider()
     
@@ -238,7 +234,6 @@ with tab1:
                     if success:
                         st.success(msg)
                         # Limpiar sesion y formulario
-                        st.session_state.reset_search = not st.session_state.reset_search
                         for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
                             if key in st.session_state:
                                 del st.session_state[key]
@@ -251,7 +246,6 @@ with tab1:
                         agregar_stock(sku, cantidad, und_x_embalaje)
                         st.success(f"{msg} - Stock inicial: {cantidad} UND")
                         # Limpiar sesion y formulario
-                        st.session_state.reset_search = not st.session_state.reset_search
                         for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
                             if key in st.session_state:
                                 del st.session_state[key]
@@ -261,7 +255,6 @@ with tab1:
     
     with col_btn2:
         if st.button("Limpiar", use_container_width=True):
-            st.session_state.reset_search = not st.session_state.reset_search
             for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
                 if key in st.session_state:
                     del st.session_state[key]
