@@ -4,7 +4,11 @@ from datetime import datetime
 import os
 import pandas as pd
 
-st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide")
+from PIL import Image
+
+logo = Image.open("assets/logo_mym.png")
+st.set_page_config(page_title="M&M Hogar", page_icon=logo, layout="wide")
+
 
 # Configurar Supabase desde variables de entorno
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://nijzonhfxyihpgozinge.supabase.co")
@@ -143,10 +147,13 @@ with st.sidebar:
 
 # ============= HEADER =============
 
-col1, col2 = st.columns([3, 1])
+col1, col2 = st.columns([1, 4])
 with col1:
-    st.markdown("# 📦 M&M Hogar")
-    st.markdown("**Sistema de Inventario y Salidas v3**")
+    st.image(logo, width=70)
+with col2:
+    st.markdown("### M&M Hogar")
+    st.markdown("**Sistema de Inventario y Salidas By Epi**")
+
 with col2:
     st.write("")
 
@@ -376,4 +383,5 @@ with tab5:
         )
     else:
         st.info("📭 No hay productos registrados")
+
 
