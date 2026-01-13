@@ -150,7 +150,7 @@ with col1:
 
 with col2:
     st.markdown("### M&M Hogar")
-    st.markdown("**Sistema de Inventario y Salidas**")
+    st.markdown("**Sistema de Inventario y Salidas by Epi**")
 
 st.divider()
 
@@ -410,3 +410,4 @@ with tab5:
         )
     else:
         st.info("No hay productos registrados")
+
