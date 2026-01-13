@@ -204,7 +204,7 @@ with tab1:
     with col1:
         sku = st.text_input("SKU", value=st.session_state.get('sku_seleccionado', ''), placeholder="BS-001", key="sku_input").upper()
     with col2:
-        nombre = st.text_input("Nombre del Producto", value=st.session_state.get('nombre_seleccionado', ''), placeholder="Babysec Premium P - 20
+nombre = st.text_input("Nombre del Producto", value=st.session_state
 
 # ============= TAB 2: REGISTRAR VENTA =============
 
@@ -353,6 +353,7 @@ with tab5:
         )
     else:
         st.info("📭 No hay productos registrados")
+
 
 
 
