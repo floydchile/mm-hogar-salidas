@@ -158,14 +158,16 @@ with col2:
 
 st.divider()
 
-# ============= NAVEGACIÓN INFERIOR (BOTTOM NAV) =============
+# ============= NAVEGACIÓN RESPONSIVA =============
 
+# EN DESKTOP: Mostrar botones en fila
 col_nav = st.columns(5)
 tab_names = ["📦 Inventario", "💳 Venta", "📊 Ventas", "📥 Entradas", "📈 Stock"]
 
 for idx, col in enumerate(col_nav):
     with col:
-        if st.button(tab_names[idx], use_container_width=True, key=f"nav_{idx}"):
+        button_style = "primary" if st.session_state.selected_tab == idx else "secondary"
+        if st.button(tab_names[idx], use_container_width=True, key=f"nav_{idx}", type=button_style):
             st.session_state.selected_tab = idx
 
 selected_tab = st.session_state.selected_tab
