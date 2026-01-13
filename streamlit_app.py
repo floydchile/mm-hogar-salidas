@@ -217,7 +217,7 @@ with tab1:
                     success, msg = crear_producto(sku, nombre, und_x_embalaje)
                     if success:
                         agregar_stock(sku, cantidad, und_x_embalaje)
-                        st.success(f"{msg}
+                        st.success(f"{msg}")
 ⬆️ Stock inicial: {cantidad} UND")
                         st.rerun()
                     else:
@@ -397,3 +397,4 @@ with tab5:
         )
     else:
         st.info("📭 No hay productos registrados")
+
