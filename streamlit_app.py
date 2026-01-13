@@ -158,19 +158,20 @@ with col2:
 
 st.divider()
 
-# ============= NAVEGACIÓN RESPONSIVA =============
+# ============= NAVEGACIÓN (SELECTBOX EN MÓVIL, BOTONES EN DESKTOP) =============
 
-# EN DESKTOP: Mostrar botones en fila
-col_nav = st.columns(5)
 tab_names = ["📦 Inventario", "💳 Venta", "📊 Ventas", "📥 Entradas", "📈 Stock"]
 
-for idx, col in enumerate(col_nav):
-    with col:
-        button_style = "primary" if st.session_state.selected_tab == idx else "secondary"
-        if st.button(tab_names[idx], use_container_width=True, key=f"nav_{idx}", type=button_style):
-            st.session_state.selected_tab = idx
-
-selected_tab = st.session_state.selected_tab
+# Usar selectbox compacto para navegación
+selected_tab = st.selectbox(
+    "Selecciona sección:",
+    range(5),
+    format_func=lambda x: tab_names[x],
+    index=st.session_state.selected_tab,
+    key="nav_selectbox",
+    label_visibility="collapsed"
+)
+st.session_state.selected_tab = selected_tab
 
 st.divider()
 
