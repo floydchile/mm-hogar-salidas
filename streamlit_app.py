@@ -146,7 +146,7 @@ with st.sidebar:
 col1, col2 = st.columns([3, 1])
 with col1:
     st.markdown("# 📦 M&M Hogar")
-    st.markdown("**Sistema de Inventario y Salidas**")
+    st.markdown("**Sistema de Inventario y Salidas v3**")
 with col2:
     st.write("")
 
@@ -376,3 +376,4 @@ with tab5:
         )
     else:
         st.info("📭 No hay productos registrados")
+
