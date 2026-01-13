@@ -222,7 +222,8 @@ with tab1:
                     success, msg = agregar_stock(sku, cantidad, und_x_embalaje)
                     if success:
                         st.success(msg)
-                        # Limpiar sesion y buscador
+                        # Limpiar sesion, buscador y formulario
+                        st.session_state.buscador = ""
                         if 'sku_seleccionado' in st.session_state:
                             del st.session_state['sku_seleccionado']
                         if 'nombre_seleccionado' in st.session_state:
@@ -237,7 +238,8 @@ with tab1:
                     if success:
                         agregar_stock(sku, cantidad, und_x_embalaje)
                         st.success(f"{msg} - Stock inicial: {cantidad} UND")
-                        # Limpiar sesion y buscador
+                        # Limpiar sesion, buscador y formulario
+                        st.session_state.buscador = ""
                         if 'sku_seleccionado' in st.session_state:
                             del st.session_state['sku_seleccionado']
                         if 'nombre_seleccionado' in st.session_state:
@@ -250,6 +252,7 @@ with tab1:
     
     with col_btn2:
         if st.button("Limpiar", use_container_width=True):
+            st.session_state.buscador = ""
             for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado']:
                 if key in st.session_state:
                     del st.session_state[key]
