@@ -34,9 +34,6 @@ except Exception as e:
 if 'usuario' not in st.session_state:
     st.session_state.usuario = None
 
-if 'query_buscar' not in st.session_state:
-    st.session_state.query_buscar = ""
-
 # ============= FUNCIONES =============
 
 def producto_existe(sku):
@@ -46,8 +43,7 @@ def producto_existe(sku):
     except:
         return False
 
-def cargar_productos_sin_cache():
-    """Carga productos SIN CACHE para búsqueda en tiempo real"""
+def cargar_productos():
     try:
         response = supabase.table("productos").select("*").order("creado_en", desc=True).execute()
         return response.data if response.data else []
@@ -167,52 +163,51 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["Inventario", "Registrar Venta", "Histor
 with tab1:
     st.subheader("Gestion de Inventario")
     
-    # Callback para actualizar búsqueda en tiempo real
-    def actualizar_buscar():
-        st.session_state.query_buscar = st.session_state.buscador_input
+    # Cargar productos
+    productos = cargar_productos()
     
-    # Buscador con callback - sin key para forzar re-render
-    query_input = st.text_input("Buscar SKU o nombre:", 
-                 placeholder="Escribe SKU o parte del nombre...", 
-                 key="buscador_input",
-                 on_change=actualizar_buscar)
+    # Buscador simple - TEXTO PURO
+    query = st.text_input("🔍 Buscar SKU o nombre:", 
+                         placeholder="Escribe SKU o parte del nombre...", 
+                         key="buscador_simple")
     
-    # Cargar productos SIN CACHE para búsqueda en tiempo real
-    productos = cargar_productos_sin_cache()
-    
-    # Filtrar productos usando la búsqueda actual
-    query_buscar = st.session_state.query_buscar
-    if query_buscar:
-        productos_filtrados = [p for p in productos if query_buscar.upper() in p["sku"].upper() or query_buscar.lower() in p["nombre"].lower()]
+    # Filtrar productos EN TIEMPO REAL
+    if query:
+        productos_filtrados = [p for p in productos if query.upper() in p["sku"].upper() or query.lower() in p["nombre"].lower()]
     else:
         productos_filtrados = []
     
-    # Mostrar resultados EN TIEMPO REAL
-    if query_buscar:
+    # MOSTRAR RESULTADOS DE BÚSQUEDA
+    if query:
         if productos_filtrados:
-            st.markdown(f"**✅ {len(productos_filtrados)} resultado(s) encontrado(s):**")
-            for p in productos_filtrados[:10]:
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**{p['sku']}** - {p['nombre']}")
-                with col2:
-                    st.caption(f"Stock: {p.get('stock_total', 0)}")
-                
-                if st.button(f"Seleccionar {p['sku']}", key=f"sel_{p['sku']}", use_container_width=True):
-                    st.session_state.sku_seleccionado = p['sku']
-                    st.session_state.nombre_seleccionado = p['nombre']
-                    st.session_state.und_seleccionado = p.get('und_x_embalaje', 1)
-                    st.session_state.stock_actual_seleccionado = p.get('stock_total', 0)
-                    st.session_state.buscador_input = ""
-                    st.session_state.query_buscar = ""
-                    st.success(f"Seleccionado: {p['sku']}")
-                    st.rerun()
+            st.markdown(f"### ✅ {len(productos_filtrados)} resultado(s)")
+            
+            for idx, p in enumerate(productos_filtrados[:10]):
+                with st.container(border=True):
+                    col1, col2, col3 = st.columns([2, 1, 1])
+                    
+                    with col1:
+                        st.markdown(f"**SKU:** {p['sku']}")
+                        st.markdown(f"**Producto:** {p['nombre']}")
+                    
+                    with col2:
+                        st.metric("Stock", p.get('stock_total', 0))
+                    
+                    with col3:
+                        if st.button("✅ Usar", key=f"btn_usar_{p['sku']}", use_container_width=True):
+                            st.session_state.sku_seleccionado = p['sku']
+                            st.session_state.nombre_seleccionado = p['nombre']
+                            st.session_state.und_seleccionado = p.get('und_x_embalaje', 1)
+                            st.session_state.stock_actual_seleccionado = p.get('stock_total', 0)
+                            st.rerun()
         else:
-            st.warning("❌ Producto no encontrado. Puedes agregarlo en el formulario de abajo como nuevo producto.")
+            st.warning(f"❌ No hay productos que coincidan con '{query}'")
     
     st.divider()
     
-    # Formulario principal
+    # ============= FORMULARIO PRINCIPAL =============
+    st.subheader("📝 Agregar o Actualizar Producto")
+    
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -221,13 +216,12 @@ with tab1:
     with col2:
         nombre = st.text_input("Nombre del Producto", value=st.session_state.get('nombre_seleccionado', ''), placeholder="Babysec Premium P - 20 UND", key="nombre_input")
     
-    # Determinar si el producto existe
     producto_existe_ahora = producto_existe(sku) if sku else False
     
     with col3:
         und_x_embalaje = st.number_input("UND x Embalaje", min_value=1, value=st.session_state.get('und_seleccionado', 1), key="und_input", disabled=producto_existe_ahora)
     
-    # Stock actual y cantidad a agregar
+    # Stock y Cantidad
     col1_stock, col2_stock = st.columns(2)
     
     with col1_stock:
@@ -236,10 +230,11 @@ with tab1:
     with col2_stock:
         cantidad = st.number_input("Cantidad a Agregar", min_value=1, value=1, key="cantidad_input")
     
+    # Botones de acción
     col_btn1, col_btn2 = st.columns(2)
     
     with col_btn1:
-        if st.button("Agregar/Actualizar Producto", use_container_width=True, type="primary"):
+        if st.button("💾 Agregar/Actualizar Producto", use_container_width=True, type="primary"):
             if not sku or not nombre:
                 st.error("SKU y Nombre son obligatorios")
             else:
@@ -248,7 +243,6 @@ with tab1:
                     success, msg = agregar_stock(sku, cantidad, und_x_embalaje)
                     if success:
                         st.success(msg)
-                        # Limpiar sesion y formulario
                         for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
                             if key in st.session_state:
                                 del st.session_state[key]
@@ -260,7 +254,6 @@ with tab1:
                     if success:
                         agregar_stock(sku, cantidad, und_x_embalaje)
                         st.success(f"{msg} - Stock inicial: {cantidad} UND")
-                        # Limpiar sesion y formulario
                         for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
                             if key in st.session_state:
                                 del st.session_state[key]
@@ -269,7 +262,7 @@ with tab1:
                         st.error(msg)
     
     with col_btn2:
-        if st.button("Limpiar", use_container_width=True):
+        if st.button("🗑️ Limpiar", use_container_width=True):
             for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -277,18 +270,18 @@ with tab1:
     
     st.divider()
     
-    # Tabla de productos
-    productos = cargar_productos_sin_cache()
+    # TABLA DE TODOS LOS PRODUCTOS
+    st.subheader("📊 Todos los Productos")
     
     if productos:
-        st.info(f"Total productos: **{len(productos)}**")
+        st.info(f"Total: **{len(productos)}** productos")
         df_productos = pd.DataFrame([
             {
                 "SKU": p["sku"],
                 "Nombre": p["nombre"],
                 "UND x Emb": p.get("und_x_embalaje", 1),
                 "Stock Total": p.get("stock_total", 0),
-                "Ultima Actualizacion": p.get("actualizado_en", "")[:10] if p.get("actualizado_en") else "N/A"
+                "Última Actualización": p.get("actualizado_en", "")[:10] if p.get("actualizado_en") else "N/A"
             }
             for p in productos
         ])
@@ -300,7 +293,7 @@ with tab1:
 
 with tab2:
     st.subheader("Registrar Venta")
-    productos = cargar_productos_sin_cache()
+    productos = cargar_productos()
     
     if productos:
         opciones = [f"{p['sku']} - {p['nombre']}" for p in productos]
@@ -401,7 +394,7 @@ with tab4:
 
 with tab5:
     st.subheader("Resumen de Stock Actual")
-    productos = cargar_productos_sin_cache()
+    productos = cargar_productos()
     
     if productos:
         total_productos = len(productos)
