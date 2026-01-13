@@ -34,6 +34,9 @@ except Exception as e:
 if 'usuario' not in st.session_state:
     st.session_state.usuario = None
 
+if 'query_buscar' not in st.session_state:
+    st.session_state.query_buscar = ""
+
 # ============= FUNCIONES =============
 
 def producto_existe(sku):
@@ -163,19 +166,27 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["Inventario", "Registrar Venta", "Histor
 with tab1:
     st.subheader("Gestion de Inventario")
     
-    # Buscador en tiempo real (sin necesidad de Enter)
-    query = st.text_input("Buscar SKU o nombre:", placeholder="Escribe SKU o parte del nombre...", key="buscador_input")
+    # Callback para actualizar búsqueda en tiempo real
+    def actualizar_buscar():
+        st.session_state.query_buscar = st.session_state.buscador_input
+    
+    # Buscador con callback
+    st.text_input("Buscar SKU o nombre:", 
+                 placeholder="Escribe SKU o parte del nombre...", 
+                 key="buscador_input",
+                 on_change=actualizar_buscar)
     
     productos = cargar_productos()
     
-    # Filtrar productos en tiempo real mientras escribes
-    if query:
-        productos_filtrados = [p for p in productos if query.upper() in p["sku"].upper() or query.lower() in p["nombre"].lower()]
+    # Filtrar productos usando session state
+    query_buscar = st.session_state.query_buscar
+    if query_buscar:
+        productos_filtrados = [p for p in productos if query_buscar.upper() in p["sku"].upper() or query_buscar.lower() in p["nombre"].lower()]
     else:
         productos_filtrados = []
     
-    # Mostrar resultados EN TIEMPO REAL (sin Enter)
-    if query:
+    # Mostrar resultados EN TIEMPO REAL
+    if query_buscar:
         if productos_filtrados:
             st.markdown("**Resultados encontrados:**")
             for p in productos_filtrados[:10]:
@@ -190,6 +201,8 @@ with tab1:
                     st.session_state.nombre_seleccionado = p['nombre']
                     st.session_state.und_seleccionado = p.get('und_x_embalaje', 1)
                     st.session_state.stock_actual_seleccionado = p.get('stock_total', 0)
+                    st.session_state.buscador_input = ""
+                    st.session_state.query_buscar = ""
                     st.success(f"Seleccionado: {p['sku']}")
                     st.rerun()
         else:
