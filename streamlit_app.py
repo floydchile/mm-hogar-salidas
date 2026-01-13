@@ -218,7 +218,7 @@ with tab1:
                     if success:
                         agregar_stock(sku, cantidad, und_x_embalaje)
                         st.success(f"{msg}")
-⬆️ Stock inicial: {cantidad} UND")
+Stock inicial: {cantidad} UND")
                         st.rerun()
                     else:
                         st.error(msg)
@@ -397,4 +397,5 @@ with tab5:
         )
     else:
         st.info("📭 No hay productos registrados")
+
 
