@@ -175,21 +175,24 @@ with tab1:
         productos_filtrados = []
     
     # Mostrar resultados del buscador
-    if query and productos_filtrados:
-        st.markdown("**Resultados encontrados:**")
-        for p in productos_filtrados[:10]:
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown(f"**{p['sku']}** - {p['nombre']}")
-            with col2:
-                st.caption(f"Stock: {p.get('stock_total', 0)}")
-            
-            if st.button(f"Seleccionar {p['sku']}", key=f"sel_{p['sku']}", use_container_width=True):
-                st.session_state.sku_seleccionado = p['sku']
-                st.session_state.nombre_seleccionado = p['nombre']
-                st.session_state.und_seleccionado = p.get('und_x_embalaje', 1)
-                st.success(f"Seleccionado: {p['sku']}")
-                st.rerun()
+    if query:
+        if productos_filtrados:
+            st.markdown("**Resultados encontrados:**")
+            for p in productos_filtrados[:10]:
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"**{p['sku']}** - {p['nombre']}")
+                with col2:
+                    st.caption(f"Stock: {p.get('stock_total', 0)}")
+                
+                if st.button(f"Seleccionar {p['sku']}", key=f"sel_{p['sku']}", use_container_width=True):
+                    st.session_state.sku_seleccionado = p['sku']
+                    st.session_state.nombre_seleccionado = p['nombre']
+                    st.session_state.und_seleccionado = p.get('und_x_embalaje', 1)
+                    st.success(f"Seleccionado: {p['sku']}")
+                    st.rerun()
+        else:
+            st.warning("Producto no encontrado. Puedes agregarlo en el formulario de abajo.")
     
     st.divider()
     
