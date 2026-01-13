@@ -217,7 +217,7 @@ with tab1:
     col1_stock, col2_stock = st.columns(2)
     
     with col1_stock:
-        st.metric("Stock Actual", st.session_state.get('stock_actual_seleccionado', 0))
+        st.number_input("Stock Actual", min_value=0, value=st.session_state.get('stock_actual_seleccionado', 0), key="stock_actual_input")
     
     with col2_stock:
         cantidad = st.number_input("Cantidad a Agregar", min_value=1, value=1, key="cantidad_input")
@@ -433,4 +433,3 @@ with tab5:
         )
     else:
         st.info("No hay productos registrados")
-
