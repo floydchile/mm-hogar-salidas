@@ -53,7 +53,7 @@ def cargar_productos():
 def crear_producto(sku, nombre, und_x_embalaje):
     try:
         supabase.table("productos").insert({
-            "sku": sku.upper(),  # ← AGREGAR .upper()
+            "sku": sku.upper(),
             "nombre": nombre,
             "und_x_embalaje": int(und_x_embalaje),
             "stock_total": 0,
@@ -66,17 +66,17 @@ def crear_producto(sku, nombre, und_x_embalaje):
 
 def agregar_stock(sku, cantidad, und_x_embalaje):
     try:
-        response = supabase.table("productos").select("stock_total").eq("sku", sku.upper()).execute()  # ← .upper()
+        response = supabase.table("productos").select("stock_total").eq("sku", sku.upper()).execute()
         stock_actual = response.data[0]["stock_total"] if response.data else 0
         nuevo_stock = stock_actual + cantidad
         
         supabase.table("productos").update({
             "stock_total": nuevo_stock,
             "actualizado_en": datetime.now().isoformat()
-        }).eq("sku", sku.upper()).execute()  # ← .upper()
+        }).eq("sku", sku.upper()).execute()
         
         supabase.table("entradas").insert({
-            "sku": sku.upper(),  # ← AGREGAR .upper()
+            "sku": sku.upper(),
             "cantidad": int(cantidad),
             "und_x_embalaje": int(und_x_embalaje),
             "usuario": st.session_state.usuario,
@@ -87,9 +87,16 @@ def agregar_stock(sku, cantidad, und_x_embalaje):
     except Exception as e:
         return False, f"Error: {str(e)}"
 
+def cargar_salidas():
+    try:
+        response = supabase.table("salidas").select("*").order("fecha", desc=True).execute()
+        return response.data if response.data else []
+    except:
+        return []
+
 def agregar_salida(sku, cantidad, canal, usuario):
     try:
-        response = supabase.table("productos").select("stock_total").eq("sku", sku.upper()).execute()  # ← .upper()
+        response = supabase.table("productos").select("stock_total").eq("sku", sku.upper()).execute()
         stock_actual = response.data[0]["stock_total"] if response.data else 0
         
         if stock_actual < cantidad:
@@ -100,10 +107,10 @@ def agregar_salida(sku, cantidad, canal, usuario):
         supabase.table("productos").update({
             "stock_total": nuevo_stock,
             "actualizado_en": datetime.now().isoformat()
-        }).eq("sku", sku.upper()).execute()  # ← .upper()
+        }).eq("sku", sku.upper()).execute()
         
         supabase.table("salidas").insert({
-            "sku": sku.upper(),  # ← AGREGAR .upper()
+            "sku": sku.upper(),
             "cantidad": int(cantidad),
             "canal": canal,
             "usuario": usuario,
@@ -113,7 +120,6 @@ def agregar_salida(sku, cantidad, canal, usuario):
         return True, "Venta registrada"
     except Exception as e:
         return False, f"Error: {str(e)}"
-
 
 def cargar_entradas():
     try:
@@ -401,4 +407,3 @@ with tab5:
         )
     else:
         st.info("No hay productos registrados")
-
