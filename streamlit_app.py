@@ -142,19 +142,18 @@ with st.sidebar:
         st.session_state.usuario = usuario
         st.success(f"✅ {usuario}!")
 
-# ============= HEADER COMPACTO =============
+# ============= HEADER ULTRA COMPACTO =============
 
-col1, col2 = st.columns([0.6, 2.4])
+col1, col2 = st.columns([0.2, 2.8])
 
 with col1:
     if logo:
-        st.image(logo, width=45)
+        st.image(logo, width=35)
     else:
-        st.markdown("# 📦")
+        st.markdown("📦")
 
 with col2:
-    st.markdown("## M&M Hogar")
-    st.caption("Sistema de Inventario")
+    st.markdown("<h3 style='margin: 0; padding: 0;'>M&M Hogar</h3>", unsafe_allow_html=True)
 
 st.divider()
 
