@@ -158,11 +158,10 @@ with col2:
 
 st.divider()
 
-# ============= NAVEGACIÓN (SELECTBOX EN MÓVIL, BOTONES EN DESKTOP) =============
+# ============= NAVEGACIÓN =============
 
 tab_names = ["📦 Inventario", "💳 Venta", "📊 Ventas", "📥 Entradas", "📈 Stock"]
 
-# Usar selectbox compacto para navegación
 selected_tab = st.selectbox(
     "Selecciona sección:",
     range(5),
@@ -397,49 +396,38 @@ elif selected_tab == 3:
     else:
         st.info("Sin ingresos registrados")
 
-# TAB 4: RESUMEN STOCK
+# TAB 4: CONSULTA DE STOCK
 elif selected_tab == 4:
-    st.subheader("📈 Resumen de Stock")
+    st.subheader("📦 Consultar Stock")
+    
     productos = cargar_productos()
     
-    if productos:
-        total_productos = len(productos)
-        stock_total = sum(p.get("stock_total", 0) for p in productos)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Productos", total_productos)
-        
-        with col2:
-            st.metric("Stock Total", stock_total)
-        
-        with col3:
-            productos_sin_stock = len([p for p in productos if p.get("stock_total", 0) == 0])
-            st.metric("Sin Stock", productos_sin_stock)
-        
-        st.divider()
-        
-        df_stock = pd.DataFrame([
-            {
-                "SKU": p["sku"],
-                "Nombre": p["nombre"],
-                "Stock": p.get("stock_total", 0),
-                "UND x Emb": p.get("und_x_embalaje", 1),
-                "Estado": "✅ OK" if p.get("stock_total", 0) > 0 else "⚠️ SIN STOCK"
-            }
-            for p in productos
-        ])
-        st.dataframe(df_stock, use_container_width=True, hide_index=True)
-        
-        st.divider()
-        
-        csv_data = df_stock.to_csv(index=False)
-        st.download_button(
-            "📥 Descargar CSV",
-            csv_data,
-            file_name=f"stock_{datetime.now().strftime('%Y%m%d')}.csv",
-            use_container_width=True
-        )
+    # Buscador
+    query_stock = st.text_input("🔍 Buscar producto (SKU o nombre):", 
+                               placeholder="Escribe SKU o parte del nombre...", 
+                               key="buscador_stock")
+    
+    if query_stock:
+        productos_filtrados = [p for p in productos if query_stock.upper() in p["sku"].upper() or query_stock.lower() in p["nombre"].lower()]
     else:
-        st.info("No hay productos registrados")
+        productos_filtrados = []
+    
+    # Mostrar resultados
+    if query_stock:
+        if productos_filtrados:
+            st.markdown(f"### ✅ {len(productos_filtrados)} resultado(s)")
+            
+            # Tabla compacta con solo SKU, Nombre y Stock
+            df_resultados = pd.DataFrame([
+                {
+                    "SKU": p["sku"],
+                    "Nombre": p["nombre"],
+                    "Stock": p.get("stock_total", 0)
+                }
+                for p in productos_filtrados
+            ])
+            st.dataframe(df_resultados, use_container_width=True, hide_index=True)
+        else:
+            st.warning(f"❌ No hay productos que coincidan con '{query_stock}'")
+    else:
+        st.info("🔎 Usa el buscador arriba para consultar el stock de tus productos")
