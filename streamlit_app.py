@@ -167,74 +167,44 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["📦 Inventario", "📤 Registrar Venta
 
 with tab1:
     st.subheader("Gestión de Inventario")
-    st.write("Crea nuevos productos o agrega stock a productos existentes")
     
-    col1, col2, col3 = st.columns(3)
+    # Buscador en tiempo real
+    query = st.text_input("🔍 Buscar SKU o nombre:", placeholder="Escribe SKU o parte del nombre...", key="buscador")
     
-    with col1:
-        sku = st.text_input("SKU", placeholder="BS-001", key="sku_input").upper()
-    with col2:
-        nombre = st.text_input("Nombre del Producto", placeholder="Babysec Premium P - 20 UND", key="nombre_input")
-    with col3:
-        und_x_embalaje = st.number_input("UND x Embalaje", min_value=1, value=1, key="und_input")
+    productos = cargar_productos()
     
-    cantidad = st.number_input("Cantidad a ingresar", min_value=1, value=1, key="cantidad_input")
+    # Filtrar productos en tiempo real
+    if query:
+        productos_filtrados = [p for p in productos if query.upper() in p['sku'].upper() or query.lower() in p['nombre'].lower()]
+    else:
+        productos_filtrados = []
     
-    col_btn1, col_btn2 = st.columns(2)
-    
-    with col_btn1:
-        if st.button("➕ Agregar/Actualizar Producto", use_container_width=True, type="primary"):
-            if not sku or not nombre:
-                st.error("⚠️ SKU y Nombre son obligatorios")
-            else:
-                existe = producto_existe(sku)
-                
-                if existe:
-                    # Producto existe: agregar stock
-                    success, msg = agregar_stock(sku, cantidad, und_x_embalaje)
-                    if success:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-                else:
-                    # Producto nuevo: crear
-                    success, msg = crear_producto(sku, nombre, und_x_embalaje)
-                    if success:
-                        # Agregar el stock inicial
-                        agregar_stock(sku, cantidad, und_x_embalaje)
-                        st.success(f"{msg}\n⬆️ Stock inicial: {cantidad} UND")
-                        st.rerun()
-                    else:
-                        st.error(msg)
-    
-    with col_btn2:
-        if st.button("🔄 Actualizar Datos", use_container_width=True):
-            st.rerun()
+    # Mostrar resultados del buscador
+    if query and productos_filtrados:
+        st.markdown("**Resultados encontrados:**")
+        for p in productos_filtrados[:10]:  # Máximo 10 resultados
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"**{p['sku']}** - {p['nombre']}")
+            with col2:
+                st.caption(f"Stock: {p.get('stock_total', 0)}")
+            if st.button(f"📦 Seleccionar {p['sku']}", key=f"sel_{p['sku']}", use_container_width=True):
+                # Auto-rellenar formulario
+                st.session_state.sku_seleccionado = p['sku']
+                st.session_state.nombre_seleccionado = p['nombre']
+                st.session_state.und_seleccionado = p.get('und_x_embalaje', 1)
+                st.success(f"✅ Seleccionado: {p['sku']}")
+                st.rerun()
     
     st.divider()
     
-    # Mostrar tabla de productos
-    productos = cargar_productos()
+    # Formulario principal
+    col1, col2, col3 = st.columns(3)
     
-    if productos:
-        st.info(f"📊 Total productos: **{len(productos)}**")
-        
-        # Crear DataFrame para mejor visualización
-        df_productos = pd.DataFrame([
-            {
-                'SKU': p['sku'],
-                'Nombre': p['nombre'],
-                'UND x Emb': p.get('und_x_embalaje', 1),
-                'Stock Total': p.get('stock_total', 0),
-                'Última Actualización': p.get('actualizado_en', '')[:10] if p.get('actualizado_en') else 'N/A'
-            }
-            for p in productos
-        ])
-        
-        st.dataframe(df_productos, use_container_width=True, hide_index=True)
-    else:
-        st.info("📭 No hay productos registrados")
+    with col1:
+        sku = st.text_input("SKU", value=st.session_state.get('sku_seleccionado', ''), placeholder="BS-001", key="sku_input").upper()
+    with col2:
+        nombre = st.text_input("Nombre del Producto", value=st.session_state.get('nombre_seleccionado', ''), placeholder="Babysec Premium P - 20
 
 # ============= TAB 2: REGISTRAR VENTA =============
 
@@ -383,6 +353,7 @@ with tab5:
         )
     else:
         st.info("📭 No hay productos registrados")
+
 
 
 
