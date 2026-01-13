@@ -5,15 +5,16 @@ import os
 import pandas as pd
 from PIL import Image
 
+# Configurar página
+st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide", initial_sidebar_state="collapsed")
+
 # Logo
 try:
     logo = Image.open("assets/mym_hogar.png")
 except:
     logo = None
 
-st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide")
-
-# Configurar Supabase desde variables de entorno
+# Configurar Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://nijzonhfxyihpgozinge.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
@@ -33,6 +34,9 @@ except Exception as e:
 
 if 'usuario' not in st.session_state:
     st.session_state.usuario = None
+
+if 'selected_tab' not in st.session_state:
+    st.session_state.selected_tab = 0
 
 # ============= FUNCIONES =============
 
@@ -131,53 +135,60 @@ def cargar_entradas():
 # ============= SIDEBAR =============
 
 with st.sidebar:
-    st.markdown("### Usuario")
-    usuario = st.text_input("Ingresa tu nombre:", placeholder="Tu nombre aqui")
+    st.markdown("### 👤 Usuario")
+    usuario = st.text_input("Tu nombre:", placeholder="Tu nombre aqui")
     
     if usuario:
         st.session_state.usuario = usuario
-        st.success(f"Bienvenido {usuario}!")
+        st.success(f"✅ {usuario}!")
 
-# ============= HEADER =============
+# ============= HEADER COMPACTO =============
 
-col1, col2 = st.columns([1, 4])
+col1, col2 = st.columns([0.6, 2.4])
 
 with col1:
     if logo:
-        st.image(logo, width=70)
+        st.image(logo, width=45)
     else:
-        st.markdown("📦")
+        st.markdown("# 📦")
 
 with col2:
-    st.markdown("### M&M Hogar")
-    st.markdown("**Sistema de Inventario y Salidas**")
+    st.markdown("## M&M Hogar")
+    st.caption("Sistema de Inventario")
 
 st.divider()
 
-# ============= TABS =============
+# ============= NAVEGACIÓN INFERIOR (BOTTOM NAV) =============
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Inventario", "Registrar Venta", "Historial Ventas", "Historial Entradas", "Stock"])
+col_nav = st.columns(5)
+tab_names = ["📦 Inventario", "💳 Venta", "📊 Ventas", "📥 Entradas", "📈 Stock"]
 
-# ============= TAB 1: INVENTARIO =============
+for idx, col in enumerate(col_nav):
+    with col:
+        if st.button(tab_names[idx], use_container_width=True, key=f"nav_{idx}"):
+            st.session_state.selected_tab = idx
 
-with tab1:
-    st.subheader("Gestion de Inventario")
+selected_tab = st.session_state.selected_tab
+
+st.divider()
+
+# ============= CONTENIDO DE PESTAÑAS =============
+
+# TAB 0: INVENTARIO
+if selected_tab == 0:
+    st.subheader("📦 Gestión de Inventario")
     
-    # Cargar productos
     productos = cargar_productos()
     
-    # Buscador simple - TEXTO PURO
     query = st.text_input("🔍 Buscar SKU o nombre:", 
                          placeholder="Escribe SKU o parte del nombre...", 
                          key="buscador_simple")
     
-    # Filtrar productos EN TIEMPO REAL
     if query:
         productos_filtrados = [p for p in productos if query.upper() in p["sku"].upper() or query.lower() in p["nombre"].lower()]
     else:
         productos_filtrados = []
     
-    # MOSTRAR RESULTADOS DE BÚSQUEDA
     if query:
         if productos_filtrados:
             st.markdown(f"### ✅ {len(productos_filtrados)} resultado(s)")
@@ -205,8 +216,7 @@ with tab1:
     
     st.divider()
     
-    # ============= FORMULARIO PRINCIPAL =============
-    st.subheader("📝 Agregar o Actualizar Producto")
+    st.subheader("📝 Agregar o Actualizar")
     
     col1, col2, col3 = st.columns(3)
     
@@ -214,29 +224,27 @@ with tab1:
         sku = st.text_input("SKU", value=st.session_state.get('sku_seleccionado', ''), placeholder="BS-001", key="sku_input").upper()
     
     with col2:
-        nombre = st.text_input("Nombre del Producto", value=st.session_state.get('nombre_seleccionado', ''), placeholder="Babysec Premium P - 20 UND", key="nombre_input")
+        nombre = st.text_input("Nombre", value=st.session_state.get('nombre_seleccionado', ''), placeholder="Producto...", key="nombre_input")
     
     producto_existe_ahora = producto_existe(sku) if sku else False
     
     with col3:
-        und_x_embalaje = st.number_input("UND x Embalaje", min_value=1, value=st.session_state.get('und_seleccionado', 1), key="und_input", disabled=producto_existe_ahora)
+        und_x_embalaje = st.number_input("UND x Emb", min_value=1, value=st.session_state.get('und_seleccionado', 1), key="und_input", disabled=producto_existe_ahora)
     
-    # Stock y Cantidad
     col1_stock, col2_stock = st.columns(2)
     
     with col1_stock:
         st.number_input("Stock Actual", min_value=0, value=st.session_state.get('stock_actual_seleccionado', 0), key="stock_actual_input")
     
     with col2_stock:
-        cantidad = st.number_input("Cantidad a Agregar", min_value=1, value=1, key="cantidad_input")
+        cantidad = st.number_input("Cantidad", min_value=1, value=1, key="cantidad_input")
     
-    # Botones de acción
     col_btn1, col_btn2 = st.columns(2)
     
     with col_btn1:
-        if st.button("💾 Agregar/Actualizar Producto", use_container_width=True, type="primary"):
+        if st.button("💾 Guardar", use_container_width=True, type="primary"):
             if not sku or not nombre:
-                st.error("SKU y Nombre son obligatorios")
+                st.error("SKU y Nombre obligatorios")
             else:
                 existe = producto_existe(sku)
                 if existe:
@@ -253,7 +261,7 @@ with tab1:
                     success, msg = crear_producto(sku, nombre, und_x_embalaje)
                     if success:
                         agregar_stock(sku, cantidad, und_x_embalaje)
-                        st.success(f"{msg} - Stock inicial: {cantidad} UND")
+                        st.success(f"{msg} ✅")
                         for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
                             if key in st.session_state:
                                 del st.session_state[key]
@@ -270,7 +278,6 @@ with tab1:
     
     st.divider()
     
-    # TABLA DE TODOS LOS PRODUCTOS
     st.subheader("📊 Todos los Productos")
     
     if productos:
@@ -280,19 +287,18 @@ with tab1:
                 "SKU": p["sku"],
                 "Nombre": p["nombre"],
                 "UND x Emb": p.get("und_x_embalaje", 1),
-                "Stock Total": p.get("stock_total", 0),
-                "Última Actualización": p.get("actualizado_en", "")[:10] if p.get("actualizado_en") else "N/A"
+                "Stock": p.get("stock_total", 0),
+                "Actualizado": p.get("actualizado_en", "")[:10] if p.get("actualizado_en") else "N/A"
             }
             for p in productos
         ])
         st.dataframe(df_productos, use_container_width=True, hide_index=True)
     else:
-        st.info("No hay productos registrados")
+        st.info("No hay productos")
 
-# ============= TAB 2: REGISTRAR VENTA =============
-
-with tab2:
-    st.subheader("Registrar Venta")
+# TAB 1: REGISTRAR VENTA
+elif selected_tab == 1:
+    st.subheader("💳 Registrar Venta")
     productos = cargar_productos()
     
     if productos:
@@ -301,17 +307,17 @@ with tab2:
         col1, col2 = st.columns(2)
         
         with col1:
-            producto_sel = st.selectbox("Selecciona Producto:", opciones, key="producto_venta")
+            producto_sel = st.selectbox("Producto:", opciones, key="producto_venta")
         
         with col2:
             cantidad_venta = st.number_input("Cantidad:", min_value=1, value=1, key="cantidad_venta")
         
-        canal = st.selectbox("Canal de Venta:",
+        canal = st.selectbox("Canal:",
             ["Mercadolibre", "Falabella", "Walmart", "Hites", "Paris", "Ripley",
              "Directo - Web", "Directo - WhatsApp", "Directo - Retiro"],
             key="canal_venta")
         
-        if st.button("Guardar Venta", use_container_width=True, type="primary"):
+        if st.button("✅ Guardar Venta", use_container_width=True, type="primary"):
             if st.session_state.usuario:
                 sku = producto_sel.split(" - ")[0]
                 success, msg = agregar_salida(sku, cantidad_venta, canal, st.session_state.usuario)
@@ -322,14 +328,13 @@ with tab2:
                 else:
                     st.error(msg)
             else:
-                st.warning("Ingresa tu nombre en la barra lateral primero")
+                st.warning("Ingresa tu nombre en la barra lateral")
     else:
-        st.warning("Agrega productos primero en la pestana 'Inventario'")
+        st.warning("Agrega productos primero")
 
-# ============= TAB 3: HISTORIAL VENTAS =============
-
-with tab3:
-    st.subheader("Historial de Ventas")
+# TAB 2: HISTORIAL VENTAS
+elif selected_tab == 2:
+    st.subheader("📊 Historial de Ventas")
     salidas = cargar_salidas()
     
     if salidas:
@@ -350,7 +355,7 @@ with tab3:
         
         csv_data = df_salidas.to_csv(index=False)
         st.download_button(
-            "Descargar CSV",
+            "📥 Descargar CSV",
             csv_data,
             file_name=f"ventas_{datetime.now().strftime('%Y%m%d')}.csv",
             use_container_width=True
@@ -358,10 +363,9 @@ with tab3:
     else:
         st.info("Sin ventas registradas")
 
-# ============= TAB 4: HISTORIAL ENTRADAS =============
-
-with tab4:
-    st.subheader("Historial de Entradas de Stock")
+# TAB 3: HISTORIAL ENTRADAS
+elif selected_tab == 3:
+    st.subheader("📥 Historial de Entradas")
     entradas = cargar_entradas()
     
     if entradas:
@@ -382,7 +386,7 @@ with tab4:
         
         csv_data = df_entradas.to_csv(index=False)
         st.download_button(
-            "Descargar CSV",
+            "📥 Descargar CSV",
             csv_data,
             file_name=f"entradas_{datetime.now().strftime('%Y%m%d')}.csv",
             use_container_width=True
@@ -390,10 +394,9 @@ with tab4:
     else:
         st.info("Sin ingresos registrados")
 
-# ============= TAB 5: RESUMEN DE STOCK =============
-
-with tab5:
-    st.subheader("Resumen de Stock Actual")
+# TAB 4: RESUMEN STOCK
+elif selected_tab == 4:
+    st.subheader("📈 Resumen de Stock")
     productos = cargar_productos()
     
     if productos:
@@ -403,10 +406,10 @@ with tab5:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.metric("Total Productos", total_productos)
+            st.metric("Productos", total_productos)
         
         with col2:
-            st.metric("Stock Total (UND)", stock_total)
+            st.metric("Stock Total", stock_total)
         
         with col3:
             productos_sin_stock = len([p for p in productos if p.get("stock_total", 0) == 0])
@@ -420,7 +423,7 @@ with tab5:
                 "Nombre": p["nombre"],
                 "Stock": p.get("stock_total", 0),
                 "UND x Emb": p.get("und_x_embalaje", 1),
-                "Estado": "OK" if p.get("stock_total", 0) > 0 else "SIN STOCK"
+                "Estado": "✅ OK" if p.get("stock_total", 0) > 0 else "⚠️ SIN STOCK"
             }
             for p in productos
         ])
@@ -430,7 +433,7 @@ with tab5:
         
         csv_data = df_stock.to_csv(index=False)
         st.download_button(
-            "Descargar CSV",
+            "📥 Descargar CSV",
             csv_data,
             file_name=f"stock_{datetime.now().strftime('%Y%m%d')}.csv",
             use_container_width=True
