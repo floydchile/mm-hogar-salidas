@@ -6,7 +6,7 @@ import pandas as pd
 
 from PIL import Image
 
-logo = Image.open("assets/logo_mym.png")
+logo = Image.open("assets/mym_hogar.png")
 st.set_page_config(page_title="M&M Hogar", page_icon=logo, layout="wide")
 
 
@@ -383,5 +383,6 @@ with tab5:
         )
     else:
         st.info("📭 No hay productos registrados")
+
 
 
