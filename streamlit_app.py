@@ -150,7 +150,7 @@ with col1:
 
 with col2:
     st.markdown("### M&M Hogar")
-    st.markdown("**Sistema de Inventario y Salidas by Epi**")
+    st.markdown("**Sistema de Inventario y Salidas**")
 
 st.divider()
 
@@ -222,6 +222,13 @@ with tab1:
                     success, msg = agregar_stock(sku, cantidad, und_x_embalaje)
                     if success:
                         st.success(msg)
+                        # Limpiar sesion y buscador
+                        if 'sku_seleccionado' in st.session_state:
+                            del st.session_state['sku_seleccionado']
+                        if 'nombre_seleccionado' in st.session_state:
+                            del st.session_state['nombre_seleccionado']
+                        if 'und_seleccionado' in st.session_state:
+                            del st.session_state['und_seleccionado']
                         st.rerun()
                     else:
                         st.error(msg)
@@ -230,6 +237,13 @@ with tab1:
                     if success:
                         agregar_stock(sku, cantidad, und_x_embalaje)
                         st.success(f"{msg} - Stock inicial: {cantidad} UND")
+                        # Limpiar sesion y buscador
+                        if 'sku_seleccionado' in st.session_state:
+                            del st.session_state['sku_seleccionado']
+                        if 'nombre_seleccionado' in st.session_state:
+                            del st.session_state['nombre_seleccionado']
+                        if 'und_seleccionado' in st.session_state:
+                            del st.session_state['und_seleccionado']
                         st.rerun()
                     else:
                         st.error(msg)
@@ -410,4 +424,3 @@ with tab5:
         )
     else:
         st.info("No hay productos registrados")
-
