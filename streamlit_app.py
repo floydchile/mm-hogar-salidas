@@ -153,7 +153,7 @@ with col1:
 
 with col2:
     st.markdown("### M&M Hogar")
-    st.markdown("**Sistema de Inventario y Salidas by Epi**")
+    st.markdown("**Sistema de Inventario y Salidas**")
 
 st.divider()
 
@@ -210,8 +210,11 @@ with tab1:
     with col2:
         nombre = st.text_input("Nombre del Producto", value=st.session_state.get('nombre_seleccionado', ''), placeholder="Babysec Premium P - 20 UND", key="nombre_input")
     
+    # Determinar si el producto existe
+    producto_existe_ahora = producto_existe(sku) if sku else False
+    
     with col3:
-        und_x_embalaje = st.number_input("UND x Embalaje", min_value=1, value=st.session_state.get('und_seleccionado', 1), key="und_input")
+        und_x_embalaje = st.number_input("UND x Embalaje", min_value=1, value=st.session_state.get('und_seleccionado', 1), key="und_input", disabled=producto_existe_ahora)
     
     # Stock actual y cantidad a agregar
     col1_stock, col2_stock = st.columns(2)
