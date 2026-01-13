@@ -193,6 +193,7 @@ with tab1:
                     st.session_state.sku_seleccionado = p['sku']
                     st.session_state.nombre_seleccionado = p['nombre']
                     st.session_state.und_seleccionado = p.get('und_x_embalaje', 1)
+                    st.session_state.stock_actual_seleccionado = p.get('stock_total', 0)
                     st.success(f"Seleccionado: {p['sku']}")
                     st.rerun()
         else:
@@ -212,7 +213,14 @@ with tab1:
     with col3:
         und_x_embalaje = st.number_input("UND x Embalaje", min_value=1, value=st.session_state.get('und_seleccionado', 1), key="und_input")
     
-    cantidad = st.number_input("Cantidad a ingresar", min_value=1, value=1, key="cantidad_input")
+    # Stock actual (solo lectura) y cantidad a agregar
+    col1_stock, col2_stock = st.columns(2)
+    
+    with col1_stock:
+        st.number_input("Stock Actual", min_value=0, value=st.session_state.get('stock_actual_seleccionado', 0), key="stock_actual_input", disabled=True)
+    
+    with col2_stock:
+        cantidad = st.number_input("Cantidad a Agregar", min_value=1, value=1, key="cantidad_input")
     
     col_btn1, col_btn2 = st.columns(2)
     
@@ -228,12 +236,9 @@ with tab1:
                         st.success(msg)
                         # Limpiar sesion y formulario
                         st.session_state.reset_search = not st.session_state.reset_search
-                        if 'sku_seleccionado' in st.session_state:
-                            del st.session_state['sku_seleccionado']
-                        if 'nombre_seleccionado' in st.session_state:
-                            del st.session_state['nombre_seleccionado']
-                        if 'und_seleccionado' in st.session_state:
-                            del st.session_state['und_seleccionado']
+                        for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
+                            if key in st.session_state:
+                                del st.session_state[key]
                         st.rerun()
                     else:
                         st.error(msg)
@@ -244,12 +249,9 @@ with tab1:
                         st.success(f"{msg} - Stock inicial: {cantidad} UND")
                         # Limpiar sesion y formulario
                         st.session_state.reset_search = not st.session_state.reset_search
-                        if 'sku_seleccionado' in st.session_state:
-                            del st.session_state['sku_seleccionado']
-                        if 'nombre_seleccionado' in st.session_state:
-                            del st.session_state['nombre_seleccionado']
-                        if 'und_seleccionado' in st.session_state:
-                            del st.session_state['und_seleccionado']
+                        for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
+                            if key in st.session_state:
+                                del st.session_state[key]
                         st.rerun()
                     else:
                         st.error(msg)
@@ -257,7 +259,7 @@ with tab1:
     with col_btn2:
         if st.button("Limpiar", use_container_width=True):
             st.session_state.reset_search = not st.session_state.reset_search
-            for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado']:
+            for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
