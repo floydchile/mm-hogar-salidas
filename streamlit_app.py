@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import os
 import pandas as pd
 from PIL import Image
+import secrets
 
 # Configurar página
 st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide", initial_sidebar_state="collapsed")
@@ -52,39 +53,86 @@ USUARIOS_AUTORIZADOS = {
     "miguel": os.getenv("PASS_MIGUEL", "miguel123")
 }
 
-# ============= FUNCIONES DE AUTENTICACIÓN =============
+# ============= FUNCIONES DE AUTENTICACIÓN CON SESIONES PERSISTENTES =============
 
 def verificar_credenciales(usuario, contraseña):
     """Verifica usuario y contraseña"""
     return usuario in USUARIOS_AUTORIZADOS and USUARIOS_AUTORIZADOS[usuario] == contraseña
 
-def crear_token_sesion(usuario):
-    """Crea un token de sesión con expiración 24h"""
-    return {
-        "usuario": usuario,
-        "timestamp": datetime.now(),
-        "expiracion": datetime.now() + timedelta(hours=24)
-    }
+def crear_sesion_persistente(usuario):
+    """Crea una sesión persistente en Supabase (válida 7 días)"""
+    try:
+        token = secrets.token_urlsafe(32)
+        expiracion = (datetime.now() + timedelta(days=7)).isoformat()
+        
+        supabase.table("sesiones").insert({
+            "usuario": usuario,
+            "token": token,
+            "expiracion": expiracion,
+            "creado_en": datetime.now().isoformat()
+        }).execute()
+        
+        # Guardar token en session state
+        st.session_state.auth_token = token
+        st.session_state.usuario_actual = usuario
+        
+        return True, token
+    except Exception as e:
+        return False, str(e)
 
-def sesion_activa():
-    """Verifica si la sesión sigue siendo válida"""
-    if 'sesion' not in st.session_state or st.session_state.sesion is None:
-        return False
-    
-    sesion = st.session_state.sesion
-    if datetime.now() > sesion['expiracion']:
-        del st.session_state.sesion
-        return False
-    
-    return True
+def validar_sesion_persistente(token):
+    """Valida si el token de sesión sigue siendo válido"""
+    try:
+        if not token:
+            return False, None
+        
+        response = supabase.table("sesiones").select("*").eq("token", token).execute()
+        
+        if not response.data:
+            return False, None
+        
+        sesion = response.data[0]
+        expiracion = datetime.fromisoformat(sesion["expiracion"])
+        
+        # Si expiró, eliminar
+        if datetime.now() > expiracion:
+            supabase.table("sesiones").delete().eq("token", token).execute()
+            return False, None
+        
+        return True, sesion["usuario"]
+    except:
+        return False, None
+
+def cerrar_sesion(token):
+    """Elimina la sesión de la base de datos"""
+    try:
+        supabase.table("sesiones").delete().eq("token", token).execute()
+        st.session_state.auth_token = None
+        st.session_state.usuario_actual = None
+    except:
+        pass
 
 # ============= INICIALIZAR SESSION STATE =============
 
-if 'sesion' not in st.session_state:
-    st.session_state.sesion = None
+if 'auth_token' not in st.session_state:
+    st.session_state.auth_token = None
+
+if 'usuario_actual' not in st.session_state:
+    st.session_state.usuario_actual = None
 
 if 'selected_tab' not in st.session_state:
     st.session_state.selected_tab = 0
+
+# ============= VALIDAR SESIÓN EXISTENTE =============
+
+token_actual = st.session_state.auth_token
+sesion_valida = False
+usuario_logueado = None
+
+if token_actual:
+    sesion_valida, usuario_logueado = validar_sesion_persistente(token_actual)
+    if sesion_valida:
+        st.session_state.usuario_actual = usuario_logueado
 
 # ============= FUNCIONES DE NEGOCIO =============
 
@@ -182,7 +230,7 @@ def cargar_entradas():
 
 # ============= PANTALLA DE LOGIN =============
 
-if not sesion_activa():
+if not sesion_valida:
     st.markdown("<div style='text-align: center;'><h1 style='margin-top: 1rem; margin-bottom: 0.3rem;'>M&M Hogar</h1></div>", unsafe_allow_html=True)
     st.markdown("<div style='text-align: center;'><p style='margin-top: 0; margin-bottom: 2rem;'>Sistema de Inventario - Acceso Restringido</p></div>", unsafe_allow_html=True)
     
@@ -199,9 +247,12 @@ if not sesion_activa():
         with col_btn1:
             if st.button("✅ Ingresar", use_container_width=True, type="primary"):
                 if verificar_credenciales(usuario_input, contraseña_input):
-                    st.session_state.sesion = crear_token_sesion(usuario_input)
-                    st.success(f"✅ ¡Bienvenido {usuario_input}!")
-                    st.rerun()
+                    success, token = crear_sesion_persistente(usuario_input)
+                    if success:
+                        st.success(f"✅ ¡Bienvenido {usuario_input}!")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Error al crear sesión: {token}")
                 else:
                     st.error("❌ Usuario o contraseña incorrectos")
         
@@ -212,8 +263,6 @@ if not sesion_activa():
     st.stop()
 
 # ============= SESIÓN ACTIVA - MOSTRAR APLICACIÓN =============
-
-usuario_logueado = st.session_state.sesion['usuario']
 
 # ============= HEADER ULTRA COMPACTO =============
 
@@ -230,14 +279,14 @@ with col2:
 
 with col3:
     if st.button("🚪 Salir", use_container_width=True):
-        del st.session_state.sesion
+        cerrar_sesion(st.session_state.auth_token)
         st.rerun()
 
 st.divider()
 
 # ============= BARRA DE USUARIO =============
 
-st.markdown(f"<p style='text-align: center; color: #666; margin: 0.5rem 0;'>👤 Sesión activa: <b>{usuario_logueado}</b> | ⏰ Válida por 24h</p>", unsafe_allow_html=True)
+st.markdown(f"<p style='text-align: center; color: #666; margin: 0.5rem 0;'>👤 Sesión activa: <b>{usuario_logueado}</b> | ⏰ Válida por 7 días</p>", unsafe_allow_html=True)
 
 st.divider()
 
