@@ -170,7 +170,14 @@ def cargar_entradas():
 # ============= PANTALLA DE LOGIN =============
 
 if not sesion_activa():
-    st.markdown("<div style='text-align: center;'><h1 style='font-size: 4rem;'>👮</h1></div>", unsafe_allow_html=True)
+    try:
+        epitafio_guardia = Image.open("assets/epitafio_guardia.png")
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.image(epitafio_guardia, width=200)
+    except:
+        st.markdown("<div style='text-align: center;'><h1 style='font-size: 4rem;'>👮</h1></div>", unsafe_allow_html=True)
+    
     st.markdown("<div style='text-align: center;'><h1>M&M Hogar</h1></div>", unsafe_allow_html=True)
     st.markdown("<div style='text-align: center;'><p>Sistema de Inventario - Acceso Restringido</p></div>", unsafe_allow_html=True)
     
