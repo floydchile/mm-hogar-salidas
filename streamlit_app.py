@@ -297,7 +297,7 @@ if selected_tab == 0:
         if productos_filtrados:
             st.markdown(f"### ✅ {len(productos_filtrados)} resultado(s)")
             
-            for p in productos_filtrados[:10]:
+            for idx, p in enumerate(productos_filtrados[:10]):
                 with st.container(border=True):
                     col1, col2, col3 = st.columns([2, 1, 1])
                     
@@ -310,7 +310,7 @@ if selected_tab == 0:
                         st.metric("Stock", p.get('stock_total', 0))
                     
                     with col3:
-                        if st.button("✅ Usar", key=f"btn_usar_{p['sku']}", use_container_width=True):
+                        if st.button("✅ Usar", key=f"btn_usar_search_{idx}", use_container_width=True):
                             st.session_state.sku_seleccionado = p['sku']
                             st.session_state.nombre_seleccionado = p['nombre']
                             st.session_state.und_seleccionado = p.get('und_x_embalaje', 1)
