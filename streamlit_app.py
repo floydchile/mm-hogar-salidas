@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="M&M Hogar",
     page_icon="📦",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # ============= ESTILOS CSS =============
@@ -206,9 +206,36 @@ def cargar_entradas() -> list:
         st.error(f"❌ Error cargando entradas: {str(e)}")
         return []
 
+# ============= SIDEBAR CON USUARIO =============
+
+with st.sidebar:
+    st.markdown("### 👤 Usuario")
+    
+    usuario_input = st.text_input(
+        "Ingresa tu usuario:",
+        placeholder="pau, dany o miguel",
+        value=st.session_state.usuario_ingresado or "",
+        key="usuario_input_field",
+        label_visibility="collapsed"
+    ).lower().strip()
+    
+    if st.button("✅ Ingresar", use_container_width=True, type="primary", key="btn_confirmar_usuario"):
+        if usuario_input in USUARIOS_VALIDOS:
+            st.session_state.usuario_ingresado = usuario_input
+            st.success(f"✅ ¡Bienvenido {usuario_input.capitalize()}!")
+            st.rerun()
+        elif usuario_input:
+            st.error(f"❌ Usuario inválido")
+        else:
+            st.error(f"❌ Campo vacío")
+    
+    st.caption("💡 El usuario se guardará mientras mantengas la sesión abierta")
+    
+    st.divider()
+
 # ============= HEADER PRINCIPAL =============
 
-col1, col2, col_input, col_btn, col_status = st.columns([0.12, 1.8, 1.5, 0.7, 0.8])
+col1, col2, col3 = st.columns([0.15, 2.35, 0.5])
 
 with col1:
     if logo:
@@ -218,33 +245,15 @@ with col1:
 
 with col2:
     st.markdown("<h2 style='margin: 0; padding: 0; font-size: 1.5rem;'>M&M Hogar</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='margin: 0; padding: 0; font-size: 0.85rem; color: #666;'>Sistema de Inventario</p>", unsafe_allow_html=True)
+    st.markdown("<p style='margin: 0; padding: 0; font-size: 0.9rem; color: #666;'>Sistema de Inventario</p>", unsafe_allow_html=True)
 
-with col_input:
-    usuario_input = st.text_input(
-        "👤",
-        placeholder="Usuario",
-        value=st.session_state.usuario_ingresado or "",
-        key="usuario_input_field",
-        label_visibility="collapsed"
-    ).lower().strip()
-
-with col_btn:
-    if st.button("Ingresar", use_container_width=True, type="primary", key="btn_confirmar_usuario"):
-        if usuario_input in USUARIOS_VALIDOS:
-            st.session_state.usuario_ingresado = usuario_input
-            st.rerun()
-        elif usuario_input:
-            st.error("❌ Inválido")
-        else:
-            st.error("❌ Campo vacío")
-
-with col_status:
+with col3:
     usuario_actual = st.session_state.usuario_ingresado
     if usuario_actual:
-        st.markdown(f"<p style='text-align: right; margin: 0.3rem 0; padding: 0; font-weight: bold; color: #28a745; font-size: 0.9rem;'>✅ {usuario_actual.capitalize()}</p>", unsafe_allow_html=True)
+        usuario_display = f"✅ {usuario_actual.capitalize()}"
+        st.markdown(f"<p style='text-align: right; margin: 0; padding: 0.3rem 0; font-weight: bold; color: #28a745;'>{usuario_display}</p>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<p style='text-align: right; margin: 0.3rem 0; padding: 0; font-weight: bold; color: #dc3545; font-size: 0.9rem;'>❌</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: right; margin: 0; padding: 0.3rem 0; font-weight: bold; color: #dc3545;'>❌ Sin usuario</p>", unsafe_allow_html=True)
 
 st.divider()
 
