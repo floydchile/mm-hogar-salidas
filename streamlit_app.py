@@ -268,7 +268,7 @@ st.divider()
 
 # ============= NAVEGACIÓN =============
 
-tab_names = ["📦 Inventario", "💳 Venta", "📊 Ventas", "📥 Entradas", "📈 Stock"]
+tab_names = ["📦 Inventario", "💳 Venta", "📋 Historial", "📈 Stock"]
 
 selected_tab = st.selectbox(
     "Selecciona sección:",
@@ -507,88 +507,126 @@ elif selected_tab == 1:
         st.warning("⚠️ Agrega productos primero en la sección de Inventario")
 
 elif selected_tab == 2:
-    st.subheader("📊 Historial de Ventas")
-    
-    salidas = cargar_salidas()
-    
-    if salidas:
-        st.info(f"📊 Total ventas: **{len(salidas)}** | Total unidades: **{sum(v['cantidad'] for v in salidas)}**")
-        
-        df_salidas = pd.DataFrame([
-            {
-                "Fecha": v["fecha"][:10],
-                "Hora": v["fecha"][11:19] if len(v["fecha"]) > 11 else "N/A",
-                "SKU": v["sku"],
-                "Cantidad": v["cantidad"],
-                "Canal": v["canal"],
-                "Usuario": v["usuario"]
-            }
-            for v in salidas
-        ])
-        
-        st.dataframe(df_salidas, use_container_width=True, hide_index=True)
-        
-        st.divider()
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            csv_data = df_salidas.to_csv(index=False)
-            st.download_button(
-                "📥 Descargar CSV",
-                csv_data,
-                file_name=f"ventas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                use_container_width=True,
-                key="download_ventas"
-            )
-        
-        with col2:
-            st.info("Para descargar Excel, instala: pip install openpyxl")
-    else:
-        st.info("📭 Sin ventas registradas aún")
-
-elif selected_tab == 3:
-    st.subheader("📥 Historial de Entradas")
+    st.subheader("📋 Historial Completo (Entradas + Ventas)")
     
     entradas = cargar_entradas()
+    salidas = cargar_salidas()
     
-    if entradas:
-        st.info(f"📥 Total ingresos: **{len(entradas)}** | Total unidades: **{sum(e['cantidad'] for e in entradas)}**")
+    col_f1, col_f2, col_f3 = st.columns(3)
+    
+    with col_f1:
+        filtro_tipo = st.selectbox(
+            "Tipo de Movimiento:",
+            ["TODO", "Entrada 🟢", "Venta 🔴"],
+            key="filtro_tipo",
+            help="Filtra por tipo de movimiento"
+        )
+    
+    with col_f2:
+        filtro_usuario = st.selectbox(
+            "Usuario:",
+            ["TODO"] + USUARIOS_VALIDOS,
+            key="filtro_usuario",
+            help="Filtra por usuario"
+        )
+    
+    with col_f3:
+        filtro_sku = st.text_input(
+            "🔍 Buscar SKU:",
+            placeholder="Ej: BS-001",
+            key="filtro_sku",
+            help="Filtra por SKU"
+        ).upper().strip()
+    
+    historial = []
+    
+    for e in entradas:
+        historial.append({
+            "Fecha": e["fecha"][:10],
+            "Hora": e["fecha"][11:19] if len(e["fecha"]) > 11 else "N/A",
+            "Tipo": "🟢 Entrada",
+            "SKU": e["sku"],
+            "Cantidad": e["cantidad"],
+            "Info": f"{e.get('und_x_embalaje', 1)} UND/Emb",
+            "Usuario": e.get("usuario", "Sistema"),
+            "Canal": "-"
+        })
+    
+    for v in salidas:
+        historial.append({
+            "Fecha": v["fecha"][:10],
+            "Hora": v["fecha"][11:19] if len(v["fecha"]) > 11 else "N/A",
+            "Tipo": "🔴 Venta",
+            "SKU": v["sku"],
+            "Cantidad": v["cantidad"],
+            "Info": v.get("canal", "-"),
+            "Usuario": v["usuario"],
+            "Canal": v.get("canal", "-")
+        })
+    
+    historial.sort(key=lambda x: x["Fecha"], reverse=True)
+    
+    if filtro_tipo != "TODO":
+        tipo_busqueda = "🟢 Entrada" if filtro_tipo == "Entrada 🟢" else "🔴 Venta"
+        historial = [h for h in historial if h["Tipo"] == tipo_busqueda]
+    
+    if filtro_usuario != "TODO":
+        historial = [h for h in historial if h["Usuario"].lower() == filtro_usuario.lower()]
+    
+    if filtro_sku:
+        historial = [h for h in historial if filtro_sku in h["SKU"]]
+    
+    if historial:
+        st.info(f"📋 Total registros: **{len(historial)}** | Total unidades: **{sum(h['Cantidad'] for h in historial)}** UND")
         
-        df_entradas = pd.DataFrame([
-            {
-                "Fecha": e["fecha"][:10],
-                "Hora": e["fecha"][11:19] if len(e["fecha"]) > 11 else "N/A",
-                "SKU": e["sku"],
-                "Cantidad": e["cantidad"],
-                "UND x Emb": e.get("und_x_embalaje", 1),
-                "Usuario": e.get("usuario", "Sistema")
-            }
-            for e in entradas
-        ])
+        df_historial = pd.DataFrame(historial)
         
-        st.dataframe(df_entradas, use_container_width=True, hide_index=True)
+        st.dataframe(
+            df_historial[[
+                "Fecha", "Hora", "Tipo", "SKU", "Cantidad", "Info", "Usuario", "Canal"
+            ]],
+            use_container_width=True,
+            hide_index=True
+        )
         
         st.divider()
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            csv_data = df_entradas.to_csv(index=False)
-            st.download_button(
-                "📥 Descargar CSV",
-                csv_data,
-                file_name=f"entradas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                use_container_width=True,
-                key="download_entradas"
-            )
-        
-        with col2:
-            st.info("Para descargar Excel, instala: pip install openpyxl")
+        csv_data = df_historial.to_csv(index=False)
+        st.download_button(
+            "📥 Descargar CSV (filtrado)",
+            csv_data,
+            file_name=f"historial_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            use_container_width=True,
+            key="download_historial"
+        )
     else:
-        st.info("📭 Sin ingresos registrados aún")
+        st.warning("❌ No hay registros que coincidan con los filtros")
+    
+    st.divider()
+    st.subheader("👥 Estadísticas por Usuario")
+    
+    if historial:
+        stats = {}
+        for h in historial:
+            usuario = h["Usuario"]
+            if usuario not in stats:
+                stats[usuario] = {"Entradas": 0, "Ventas": 0, "UND Entrada": 0, "UND Venta": 0}
+            
+            if h["Tipo"] == "🟢 Entrada":
+                stats[usuario]["Entradas"] += 1
+                stats[usuario]["UND Entrada"] += h["Cantidad"]
+            else:
+                stats[usuario]["Ventas"] += 1
+                stats[usuario]["UND Venta"] += h["Cantidad"]
+        
+        df_stats = pd.DataFrame(stats).T
+        df_stats.columns = ["Entradas", "Ventas", "UND Entrada", "UND Venta"]
+        
+        st.dataframe(df_stats, use_container_width=True)
+    else:
+        st.info("📊 Sin datos para mostrar estadísticas")
 
-elif selected_tab == 4:
+elif selected_tab == 3:
     st.subheader("📦 Consultar Stock")
     
     productos = cargar_productos()
