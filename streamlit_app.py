@@ -24,20 +24,6 @@ st.markdown("""
         .stMetric {
             background-color: transparent;
         }
-        .success-box {
-            padding: 1rem;
-            border-radius: 0.5rem;
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-        }
-        .error-box {
-            padding: 1rem;
-            border-radius: 0.5rem;
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -222,44 +208,52 @@ def cargar_entradas() -> list:
 
 # ============= HEADER PRINCIPAL =============
 
-col1, col2, col3 = st.columns([0.2, 2.5, 0.3])
+col1, col2, col3 = st.columns([0.15, 2.35, 0.5])
 
 with col1:
     if logo:
-        st.image(logo, width=35)
+        st.image(logo, width=40)
     else:
         st.markdown("## 📦")
 
 with col2:
-    st.markdown("<h3 style='margin: 0; padding: 0;'>M&M Hogar - Sistema de Inventario</h3>", unsafe_allow_html=True)
+    st.markdown("<h2 style='margin: 0; padding: 0; font-size: 1.5rem;'>M&M Hogar</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='margin: 0; padding: 0; font-size: 0.9rem; color: #666;'>Sistema de Inventario</p>", unsafe_allow_html=True)
 
 with col3:
     usuario_actual = st.session_state.usuario_ingresado
-    usuario_display = f"👤 {usuario_actual.capitalize()}" if usuario_actual else "❌ Sin usuario"
-    st.markdown(f"<p style='text-align: right; margin: 0.5rem 0; font-weight: bold;'>{usuario_display}</p>", unsafe_allow_html=True)
+    if usuario_actual:
+        usuario_display = f"✅ {usuario_actual.capitalize()}"
+        st.markdown(f"<p style='text-align: right; margin: 0; padding: 0.3rem 0; font-weight: bold; color: #28a745;'>{usuario_display}</p>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<p style='text-align: right; margin: 0; padding: 0.3rem 0; font-weight: bold; color: #dc3545;'>❌ Sin usuario</p>", unsafe_allow_html=True)
 
 st.divider()
 
-# ============= SELECCIÓN DE USUARIO =============
+# ============= SELECCIÓN DE USUARIO CON EXPANDER =============
 
-st.markdown("### 👤 Selecciona tu Usuario")
-
-col_user1, col_user2, col_user3 = st.columns(3)
-
-with col_user1:
-    if st.button("Pau", use_container_width=True, type="secondary"):
-        st.session_state.usuario_ingresado = "pau"
-        st.rerun()
-
-with col_user2:
-    if st.button("Dany", use_container_width=True, type="secondary"):
-        st.session_state.usuario_ingresado = "dany"
-        st.rerun()
-
-with col_user3:
-    if st.button("Miguel", use_container_width=True, type="secondary"):
-        st.session_state.usuario_ingresado = "miguel"
-        st.rerun()
+with st.expander("👤 Ingresa tu Usuario", expanded=False):
+    col_exp1, col_exp2 = st.columns([3, 1])
+    
+    with col_exp1:
+        usuario_input = st.text_input(
+            "Usuario:",
+            placeholder="pau, dany o miguel",
+            value=st.session_state.usuario_ingresado or "",
+            key="usuario_input_field",
+            label_visibility="collapsed"
+        ).lower().strip()
+    
+    with col_exp2:
+        if st.button("✅ Confirmar", use_container_width=True, type="primary", key="btn_confirmar_usuario"):
+            if usuario_input in USUARIOS_VALIDOS:
+                st.session_state.usuario_ingresado = usuario_input
+                st.success(f"✅ ¡Bienvenido {usuario_input.capitalize()}!")
+                st.rerun()
+            else:
+                st.error(f"❌ Usuario inválido. Usa: pau, dany o miguel")
+    
+    st.caption("💡 El usuario se guardará mientras mantengas la sesión abierta")
 
 st.divider()
 
