@@ -542,3 +542,4 @@ elif selected_tab == 4:
             st.warning(f"❌ No hay productos que coincidan con '{query_stock}'")
     else:
         st.info("🔎 Usa el buscador arriba para consultar el stock de tus productos")
+```
