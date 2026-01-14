@@ -213,7 +213,6 @@ with st.sidebar:
     
     usuario_input = st.text_input(
         "Ingresa tu usuario:",
-        placeholder="pau, dany o miguel",
         value=st.session_state.usuario_ingresado or "",
         key="usuario_input_field",
         label_visibility="collapsed"
@@ -225,7 +224,7 @@ with st.sidebar:
             st.success(f"✅ ¡Bienvenido {usuario_input.capitalize()}!")
             st.rerun()
         elif usuario_input:
-            st.error(f"❌ Usuario inválido")
+            st.error(f"❌ Usuario inválido. Usa: pau, dany o miguel")
         else:
             st.error(f"❌ Campo vacío")
     
