@@ -209,26 +209,37 @@ def cargar_entradas() -> list:
 # ============= SIDEBAR CON USUARIO =============
 
 with st.sidebar:
-    st.markdown("### 👤 Usuario")
+    usuario_actual = st.session_state.usuario_ingresado
     
-    usuario_input = st.text_input(
-        "Ingresa tu usuario:",
-        value=st.session_state.usuario_ingresado or "",
-        key="usuario_input_field",
-        label_visibility="collapsed"
-    ).lower().strip()
-    
-    if st.button("✅ Ingresar", use_container_width=True, type="primary", key="btn_confirmar_usuario"):
-        if usuario_input in USUARIOS_VALIDOS:
-            st.session_state.usuario_ingresado = usuario_input
-            st.success(f"✅ ¡Bienvenido {usuario_input.capitalize()}!")
+    if usuario_actual:
+        st.markdown("### ✅ Usuario Activo")
+        st.markdown(f"<div style='background-color: #d4edda; border: 2px solid #28a745; border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 16px;'><p style='margin: 0; font-size: 18px; font-weight: bold; color: #155724;'>{usuario_actual.upper()}</p></div>", unsafe_allow_html=True)
+        
+        if st.button("🚪 Cerrar Sesión", use_container_width=True, key="btn_logout"):
+            st.session_state.usuario_ingresado = None
+            st.info("👋 Sesión cerrada")
             st.rerun()
-        elif usuario_input:
-            st.error(f"❌ Usuario inválido. Usa: pau, dany o miguel")
-        else:
-            st.error(f"❌ Campo vacío")
-    
-    st.caption("💡 El usuario se guardará mientras mantengas la sesión abierta")
+    else:
+        st.markdown("### 👤 Ingresar Usuario")
+        
+        usuario_input = st.text_input(
+            "Ingresa tu usuario:",
+            value="",
+            key="usuario_input_field",
+            label_visibility="collapsed"
+        ).lower().strip()
+        
+        if st.button("✅ Ingresar", use_container_width=True, type="primary", key="btn_confirmar_usuario"):
+            if usuario_input in USUARIOS_VALIDOS:
+                st.session_state.usuario_ingresado = usuario_input
+                st.success(f"✅ ¡Bienvenido {usuario_input.capitalize()}!")
+                st.rerun()
+            elif usuario_input:
+                st.error(f"❌ Usuario inválido. Usa: pau, dany o miguel")
+            else:
+                st.error(f"❌ Campo vacío")
+        
+        st.caption("💡 El usuario se guardará mientras mantengas la sesión abierta")
     
     st.divider()
 
