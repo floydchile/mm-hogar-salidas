@@ -16,9 +16,6 @@ st.markdown("""
             padding-top: 0.5rem;
             padding-bottom: 0rem;
         }
-        .stTabs [role="tablist"] button:first-child {
-            margin-left: 0;
-        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -46,21 +43,19 @@ except Exception as e:
     st.error(f"Error conectando a base de datos: {str(e)}")
     st.stop()
 
-# ============= CREDENCIALES (DESDE RAILWAY - VARIABLES PRIVADAS) =============
+# ============= CREDENCIALES =============
 USUARIOS_AUTORIZADOS = {
     "dany": os.getenv("PASS_DANY", "dany123"),
     "pau": os.getenv("PASS_PAU", "pau123"),
     "miguel": os.getenv("PASS_MIGUEL", "miguel123")
 }
 
-# ============= FUNCIONES DE AUTENTICACIÓN CON QUERY_PARAMS =============
+# ============= FUNCIONES DE AUTENTICACIÓN =============
 
 def verificar_credenciales(usuario, contraseña):
-    """Verifica usuario y contraseña"""
     return usuario in USUARIOS_AUTORIZADOS and USUARIOS_AUTORIZADOS[usuario] == contraseña
 
 def crear_sesion_persistente(usuario):
-    """Crea una sesión persistente en Supabase (válida 7 días)"""
     try:
         token = secrets.token_urlsafe(32)
         expiracion = (datetime.now() + timedelta(days=7)).isoformat()
@@ -72,19 +67,14 @@ def crear_sesion_persistente(usuario):
             "creado_en": datetime.now().isoformat()
         }).execute()
         
-        # Guardar en URL params + session state
         st.session_state.auth_token = token
         st.session_state.usuario_actual = usuario
-        
-        # Actualizar URL con token
-        st.query_params["token"] = token
         
         return True, token
     except Exception as e:
         return False, str(e)
 
 def validar_sesion_persistente(token):
-    """Valida si el token de sesión sigue siendo válido"""
     try:
         if not token:
             return False, None
@@ -97,7 +87,6 @@ def validar_sesion_persistente(token):
         sesion = response.data[0]
         expiracion = datetime.fromisoformat(sesion["expiracion"])
         
-        # Si expiró, eliminar
         if datetime.now() > expiracion:
             supabase.table("sesiones").delete().eq("token", token).execute()
             return False, None
@@ -107,24 +96,17 @@ def validar_sesion_persistente(token):
         return False, None
 
 def cerrar_sesion(token):
-    """Elimina la sesión de la base de datos"""
     try:
         supabase.table("sesiones").delete().eq("token", token).execute()
         st.session_state.auth_token = None
         st.session_state.usuario_actual = None
-        # Limpiar URL
-        st.query_params.clear()
     except:
         pass
 
-# ============= INICIALIZAR SESSION STATE =============
+# ============= SESSION STATE =============
 
 if 'auth_token' not in st.session_state:
-    # Intentar obtener token de URL primero
-    if "token" in st.query_params:
-        st.session_state.auth_token = st.query_params["token"]
-    else:
-        st.session_state.auth_token = None
+    st.session_state.auth_token = None
 
 if 'usuario_actual' not in st.session_state:
     st.session_state.usuario_actual = None
@@ -132,7 +114,7 @@ if 'usuario_actual' not in st.session_state:
 if 'selected_tab' not in st.session_state:
     st.session_state.selected_tab = 0
 
-# ============= VALIDAR SESIÓN EXISTENTE =============
+# ============= VALIDAR SESIÓN =============
 
 token_actual = st.session_state.auth_token
 sesion_valida = False
@@ -142,11 +124,6 @@ if token_actual:
     sesion_valida, usuario_logueado = validar_sesion_persistente(token_actual)
     if sesion_valida:
         st.session_state.usuario_actual = usuario_logueado
-    else:
-        # Token inválido, limpiar
-        st.session_state.auth_token = None
-        st.session_state.usuario_actual = None
-        st.query_params.clear()
 
 # ============= FUNCIONES DE NEGOCIO =============
 
@@ -242,11 +219,11 @@ def cargar_entradas():
     except:
         return []
 
-# ============= PANTALLA DE LOGIN =============
+# ============= LOGIN =============
 
 if not sesion_valida:
     st.markdown("<div style='text-align: center;'><h1 style='margin-top: 1rem; margin-bottom: 0.3rem;'>M&M Hogar</h1></div>", unsafe_allow_html=True)
-    st.markdown("<div style='text-align: center;'><p style='margin-top: 0; margin-bottom: 2rem;'>Sistema de Inventario - Acceso Restringido</p></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center;'><p style='margin-top: 0; margin-bottom: 2rem;'>Sistema de Inventario</p></div>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -266,7 +243,7 @@ if not sesion_valida:
                         st.success(f"✅ ¡Bienvenido {usuario_input}!")
                         st.rerun()
                     else:
-                        st.error(f"❌ Error al crear sesión: {token}")
+                        st.error(f"❌ Error al crear sesión")
                 else:
                     st.error("❌ Usuario o contraseña incorrectos")
         
@@ -276,9 +253,7 @@ if not sesion_valida:
     
     st.stop()
 
-# ============= SESIÓN ACTIVA - MOSTRAR APLICACIÓN =============
-
-# ============= HEADER ULTRA COMPACTO =============
+# ============= APP MAIN =============
 
 col1, col2, col3 = st.columns([0.2, 2.5, 0.3])
 
@@ -298,13 +273,11 @@ with col3:
 
 st.divider()
 
-# ============= BARRA DE USUARIO =============
-
-st.markdown(f"<p style='text-align: center; color: #666; margin: 0.5rem 0;'>👤 Sesión activa: <b>{usuario_logueado}</b> | ⏰ Válida por 7 días</p>", unsafe_allow_html=True)
+st.markdown(f"<p style='text-align: center; color: #666; margin: 0.5rem 0;'>👤 <b>{usuario_logueado}</b> | ⏰ Válida 7 días</p>", unsafe_allow_html=True)
 
 st.divider()
 
-# ============= NAVEGACIÓN =============
+# ============= TABS =============
 
 tab_names = ["📦 Inventario", "💳 Venta", "📊 Ventas", "📥 Entradas", "📈 Stock"]
 
@@ -319,8 +292,6 @@ selected_tab = st.selectbox(
 st.session_state.selected_tab = selected_tab
 
 st.divider()
-
-# ============= CONTENIDO DE PESTAÑAS =============
 
 # TAB 0: INVENTARIO
 if selected_tab == 0:
@@ -545,7 +516,6 @@ elif selected_tab == 4:
     
     productos = cargar_productos()
     
-    # Buscador
     query_stock = st.text_input("🔍 Buscar producto (SKU o nombre):", 
                                placeholder="Escribe SKU o parte del nombre...", 
                                key="buscador_stock")
@@ -555,12 +525,10 @@ elif selected_tab == 4:
     else:
         productos_filtrados = []
     
-    # Mostrar resultados
     if query_stock:
         if productos_filtrados:
             st.markdown(f"### ✅ {len(productos_filtrados)} resultado(s)")
             
-            # Tabla compacta con solo SKU, Nombre y Stock
             df_resultados = pd.DataFrame([
                 {
                     "SKU": p["sku"],
