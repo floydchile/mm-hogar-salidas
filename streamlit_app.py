@@ -1,10 +1,9 @@
 import streamlit as st
 from supabase import create_client, Client
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import pandas as pd
 from PIL import Image
-import secrets
 import re
 
 # ============= CONFIGURAR PÁGINA PRIMERO =============
@@ -66,12 +65,8 @@ def init_supabase():
 
 supabase: Client = init_supabase()
 
-# ============= CREDENCIALES =============
-USUARIOS_AUTORIZADOS = {
-    "dany": os.getenv("PASS_DANY", "dany123"),
-    "pau": os.getenv("PASS_PAU", "pau123"),
-    "miguel": os.getenv("PASS_MIGUEL", "miguel123")
-}
+# ============= USUARIOS VÁLIDOS =============
+USUARIOS_VALIDOS = ["pau", "dany", "miguel"]
 
 # ============= FUNCIONES DE VALIDACIÓN =============
 
@@ -83,85 +78,17 @@ def validar_nombre(nombre: str) -> bool:
     """Validar nombre del producto"""
     return len(nombre.strip()) >= 3 and len(nombre) <= 100
 
-# ============= FUNCIONES DE AUTENTICACIÓN =============
-
-def verificar_credenciales(usuario: str, contraseña: str) -> bool:
-    """Verificar credenciales del usuario"""
-    return usuario in USUARIOS_AUTORIZADOS and USUARIOS_AUTORIZADOS[usuario] == contraseña
-
-def crear_sesion_persistente(usuario: str) -> tuple:
-    """Crear sesión persistente en Supabase"""
-    try:
-        token = secrets.token_urlsafe(32)
-        expiracion = (datetime.now() + timedelta(days=7)).isoformat()
-        
-        supabase.table("sesiones").insert({
-            "usuario": usuario,
-            "token": token,
-            "expiracion": expiracion,
-            "creado_en": datetime.now().isoformat()
-        }).execute()
-        
-        st.session_state.auth_token = token
-        st.session_state.usuario_actual = usuario
-        
-        return True, token
-    except Exception as e:
-        return False, str(e)
-
-def validar_sesion_persistente(token: str) -> tuple:
-    """Validar si la sesión es válida"""
-    try:
-        if not token:
-            return False, None
-        
-        response = supabase.table("sesiones").select("*").eq("token", token).execute()
-        
-        if not response.data:
-            return False, None
-        
-        sesion = response.data[0]
-        expiracion = datetime.fromisoformat(sesion["expiracion"])
-        
-        if datetime.now() > expiracion:
-            supabase.table("sesiones").delete().eq("token", token).execute()
-            return False, None
-        
-        return True, sesion["usuario"]
-    except Exception as e:
-        return False, None
-
-def cerrar_sesion(token: str) -> None:
-    """Cerrar sesión actual"""
-    try:
-        if token:
-            supabase.table("sesiones").delete().eq("token", token).execute()
-        st.session_state.auth_token = None
-        st.session_state.usuario_actual = None
-    except Exception as e:
-        pass
+def validar_usuario(usuario: str) -> bool:
+    """Validar si el usuario está en la lista de válidos (case insensitive)"""
+    return usuario.lower() in USUARIOS_VALIDOS
 
 # ============= INICIALIZAR SESSION STATE =============
-
-if 'auth_token' not in st.session_state:
-    st.session_state.auth_token = None
-
-if 'usuario_actual' not in st.session_state:
-    st.session_state.usuario_actual = None
 
 if 'selected_tab' not in st.session_state:
     st.session_state.selected_tab = 0
 
-# ============= VALIDAR SESIÓN ACTUAL =============
-
-token_actual = st.session_state.auth_token
-sesion_valida = False
-usuario_logueado = None
-
-if token_actual:
-    sesion_valida, usuario_logueado = validar_sesion_persistente(token_actual)
-    if sesion_valida:
-        st.session_state.usuario_actual = usuario_logueado
+if 'usuario_ingresado' not in st.session_state:
+    st.session_state.usuario_ingresado = None
 
 # ============= FUNCIONES DE BASE DE DATOS =============
 
@@ -293,52 +220,6 @@ def cargar_entradas() -> list:
         st.error(f"❌ Error cargando entradas: {str(e)}")
         return []
 
-# ============= INTERFAZ DE LOGIN =============
-
-if not sesion_valida:
-    st.markdown("<div style='text-align: center;'><h1 style='margin-top: 1rem; margin-bottom: 0.3rem;'>📦 M&M Hogar</h1></div>", unsafe_allow_html=True)
-    st.markdown("<div style='text-align: center;'><p style='margin-top: 0; margin-bottom: 2rem; font-size: 1.1rem;'>Sistema de Inventario</p></div>", unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        st.markdown("### 🔐 Inicia Sesión")
-        
-        usuario_input = st.text_input(
-            "👤 Usuario:",
-            placeholder="Ingresa tu usuario",
-            key="login_user"
-        )
-        
-        contraseña_input = st.text_input(
-            "🔑 Contraseña:",
-            type="password",
-            placeholder="Tu contraseña",
-            key="login_pass"
-        )
-        
-        col_btn1, col_btn2 = st.columns(2)
-        
-        with col_btn1:
-            if st.button("✅ Ingresar", use_container_width=True, type="primary"):
-                if not usuario_input or not contraseña_input:
-                    st.error("❌ Usuario y contraseña son obligatorios")
-                elif verificar_credenciales(usuario_input, contraseña_input):
-                    success, token = crear_sesion_persistente(usuario_input)
-                    if success:
-                        st.success(f"✅ ¡Bienvenido {usuario_input}!")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Error al crear sesión")
-                else:
-                    st.error("❌ Usuario o contraseña incorrectos")
-        
-        with col_btn2:
-            if st.button("🗑️ Limpiar", use_container_width=True):
-                st.rerun()
-    
-    st.stop()
-
 # ============= HEADER PRINCIPAL =============
 
 col1, col2, col3 = st.columns([0.2, 2.5, 0.3])
@@ -353,13 +234,32 @@ with col2:
     st.markdown("<h3 style='margin: 0; padding: 0;'>M&M Hogar - Sistema de Inventario</h3>", unsafe_allow_html=True)
 
 with col3:
-    if st.button("🚪 Salir", use_container_width=True):
-        cerrar_sesion(st.session_state.auth_token)
-        st.rerun()
+    usuario_actual = st.session_state.usuario_ingresado
+    usuario_display = f"👤 {usuario_actual.capitalize()}" if usuario_actual else "❌ Sin usuario"
+    st.markdown(f"<p style='text-align: right; margin: 0.5rem 0; font-weight: bold;'>{usuario_display}</p>", unsafe_allow_html=True)
 
 st.divider()
 
-st.markdown(f"<p style='text-align: center; color: #666; margin: 0.5rem 0;'>👤 <b>{usuario_logueado}</b> | ⏰ Válida 7 días</p>", unsafe_allow_html=True)
+# ============= SELECCIÓN DE USUARIO =============
+
+st.markdown("### 👤 Selecciona tu Usuario")
+
+col_user1, col_user2, col_user3 = st.columns(3)
+
+with col_user1:
+    if st.button("Pau", use_container_width=True, type="secondary"):
+        st.session_state.usuario_ingresado = "pau"
+        st.rerun()
+
+with col_user2:
+    if st.button("Dany", use_container_width=True, type="secondary"):
+        st.session_state.usuario_ingresado = "dany"
+        st.rerun()
+
+with col_user3:
+    if st.button("Miguel", use_container_width=True, type="secondary"):
+        st.session_state.usuario_ingresado = "miguel"
+        st.rerun()
 
 st.divider()
 
@@ -378,6 +278,15 @@ selected_tab = st.selectbox(
 st.session_state.selected_tab = selected_tab
 
 st.divider()
+
+# ============= FUNCIÓN AUXILIAR PARA VALIDAR USUARIO EN OPERACIONES =============
+
+def requiere_usuario(funcion_nombre: str) -> bool:
+    """Valida que haya un usuario seleccionado antes de operar"""
+    if not st.session_state.usuario_ingresado:
+        st.error(f"❌ Debes seleccionar un usuario para {funcion_nombre}")
+        return False
+    return True
 
 # ============= TAB 0: INVENTARIO =============
 
@@ -474,7 +383,9 @@ if selected_tab == 0:
     
     with col_btn1:
         if st.button("💾 Guardar", use_container_width=True, type="primary", key="btn_guardar_inventario"):
-            if not sku or not nombre:
+            if not requiere_usuario("guardar productos"):
+                pass
+            elif not sku or not nombre:
                 st.error("❌ SKU y Nombre son obligatorios")
             elif not validar_sku(sku):
                 st.error("❌ SKU inválido. Usa: A-Z, 0-9, guiones (3-20 caracteres)")
@@ -482,9 +393,10 @@ if selected_tab == 0:
                 st.error("❌ Nombre inválido (3-100 caracteres)")
             else:
                 existe = producto_existe(sku)
+                usuario_actual = st.session_state.usuario_ingresado.lower()
                 
                 if existe:
-                    success, msg = agregar_stock(sku, cantidad, und_x_embalaje, usuario_logueado)
+                    success, msg = agregar_stock(sku, cantidad, und_x_embalaje, usuario_actual)
                     if success:
                         st.success(msg)
                         for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado']:
@@ -496,7 +408,7 @@ if selected_tab == 0:
                 else:
                     success_crear, msg_crear = crear_producto(sku, nombre, und_x_embalaje)
                     if success_crear:
-                        success_agregar, msg_agregar = agregar_stock(sku, cantidad, und_x_embalaje, usuario_logueado)
+                        success_agregar, msg_agregar = agregar_stock(sku, cantidad, und_x_embalaje, usuario_actual)
                         if success_agregar:
                             st.success(f"{msg_crear} y {msg_agregar}")
                             for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado']:
@@ -542,6 +454,9 @@ if selected_tab == 0:
 elif selected_tab == 1:
     st.subheader("💳 Registrar Venta")
     
+    if not requiere_usuario("registrar ventas"):
+        st.stop()
+    
     productos = cargar_productos()
     
     if productos:
@@ -576,7 +491,8 @@ elif selected_tab == 1:
         
         if st.button("✅ Guardar Venta", use_container_width=True, type="primary", key="btn_venta"):
             sku = producto_sel.split(" - ")[0]
-            success, msg = agregar_salida(sku, cantidad_venta, canal, usuario_logueado)
+            usuario_actual = st.session_state.usuario_ingresado.lower()
+            success, msg = agregar_salida(sku, cantidad_venta, canal, usuario_actual)
             
             if success:
                 st.success(msg)
@@ -626,12 +542,7 @@ elif selected_tab == 2:
             )
         
         with col2:
-            excel_data = df_salidas.to_excel(
-                index=False,
-                engine='openpyxl'
-            ) if 'openpyxl' in __import__('sys').modules else None
-            if excel_data is None:
-                st.info("Para descargar Excel, instala: pip install openpyxl")
+            st.info("Para descargar Excel, instala: pip install openpyxl")
     else:
         st.info("📭 Sin ventas registradas aún")
 
