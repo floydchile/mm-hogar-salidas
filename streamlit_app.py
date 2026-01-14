@@ -1,6 +1,6 @@
 import streamlit as st
 from supabase import create_client, Client
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import pandas as pd
 from PIL import Image
@@ -32,13 +32,48 @@ except Exception as e:
     st.error(f"Error conectando a base de datos: {str(e)}")
     st.stop()
 
-if 'usuario' not in st.session_state:
-    st.session_state.usuario = None
+# ============= CREDENCIALES (DESDE RAILWAY - VARIABLES PRIVADAS) =============
+USUARIOS_AUTORIZADOS = {
+    "dany": os.getenv("PASS_DANY", "dany123"),
+    "pau": os.getenv("PASS_PAU", "pau123"),
+    "miguel": os.getenv("PASS_MIGUEL", "miguel123")
+}
+
+# ============= FUNCIONES DE AUTENTICACIÓN =============
+
+def verificar_credenciales(usuario, contraseña):
+    """Verifica usuario y contraseña"""
+    return usuario in USUARIOS_AUTORIZADOS and USUARIOS_AUTORIZADOS[usuario] == contraseña
+
+def crear_token_sesion(usuario):
+    """Crea un token de sesión con expiración 24h"""
+    return {
+        "usuario": usuario,
+        "timestamp": datetime.now(),
+        "expiracion": datetime.now() + timedelta(hours=24)
+    }
+
+def sesion_activa():
+    """Verifica si la sesión sigue siendo válida"""
+    if 'sesion' not in st.session_state:
+        return False
+    
+    sesion = st.session_state.sesion
+    if datetime.now() > sesion['expiracion']:
+        del st.session_state.sesion
+        return False
+    
+    return True
+
+# ============= INICIALIZAR SESSION STATE =============
+
+if 'sesion' not in st.session_state:
+    st.session_state.sesion = None
 
 if 'selected_tab' not in st.session_state:
     st.session_state.selected_tab = 0
 
-# ============= FUNCIONES =============
+# ============= FUNCIONES DE NEGOCIO =============
 
 def producto_existe(sku):
     try:
@@ -68,7 +103,7 @@ def crear_producto(sku, nombre, und_x_embalaje):
     except Exception as e:
         return False, f"Error: {str(e)}"
 
-def agregar_stock(sku, cantidad, und_x_embalaje):
+def agregar_stock(sku, cantidad, und_x_embalaje, usuario):
     try:
         response = supabase.table("productos").select("stock_total").eq("sku", sku.upper()).execute()
         stock_actual = response.data[0]["stock_total"] if response.data else 0
@@ -83,7 +118,7 @@ def agregar_stock(sku, cantidad, und_x_embalaje):
             "sku": sku.upper(),
             "cantidad": int(cantidad),
             "und_x_embalaje": int(und_x_embalaje),
-            "usuario": st.session_state.usuario,
+            "usuario": usuario,
             "fecha": datetime.now().isoformat()
         }).execute()
         
@@ -132,19 +167,48 @@ def cargar_entradas():
     except:
         return []
 
-# ============= SIDEBAR =============
+# ============= PANTALLA DE LOGIN =============
 
-with st.sidebar:
-    st.markdown("### 👤 Usuario")
-    usuario = st.text_input("Tu nombre:", placeholder="Tu nombre aqui")
+if not sesion_activa():
+    st.markdown("<div style='text-align: center;'><h1>🔐 M&M Hogar</h1></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center;'><p>Sistema de Inventario - Acceso Restringido</p></div>", unsafe_allow_html=True)
     
-    if usuario:
-        st.session_state.usuario = usuario
-        st.success(f"✅ {usuario}!")
+    st.divider()
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("### Inicia Sesión")
+        
+        usuario_input = st.text_input("👤 Usuario:", placeholder="dany, pau o miguel")
+        contraseña_input = st.text_input("🔑 Contraseña:", type="password", placeholder="Tu contraseña")
+        
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            if st.button("✅ Ingresar", use_container_width=True, type="primary"):
+                if verificar_credenciales(usuario_input, contraseña_input):
+                    st.session_state.sesion = crear_token_sesion(usuario_input)
+                    st.success(f"✅ ¡Bienvenido {usuario_input}!")
+                    st.rerun()
+                else:
+                    st.error("❌ Usuario o contraseña incorrectos")
+        
+        with col_btn2:
+            if st.button("🗑️ Limpiar", use_container_width=True):
+                st.rerun()
+        
+        st.info("**Usuarios disponibles:**\n- dany\n- pau\n- miguel")
+    
+    st.stop()
+
+# ============= SESIÓN ACTIVA - MOSTRAR APLICACIÓN =============
+
+usuario_logueado = st.session_state.sesion['usuario']
 
 # ============= HEADER ULTRA COMPACTO =============
 
-col1, col2 = st.columns([0.2, 2.8])
+col1, col2, col3 = st.columns([0.2, 2.5, 0.3])
 
 with col1:
     if logo:
@@ -154,6 +218,17 @@ with col1:
 
 with col2:
     st.markdown("<h3 style='margin: 0; padding: 0;'>M&M Hogar</h3>", unsafe_allow_html=True)
+
+with col3:
+    if st.button("🚪 Salir", use_container_width=True):
+        del st.session_state.sesion
+        st.rerun()
+
+st.divider()
+
+# ============= BARRA DE USUARIO =============
+
+st.markdown(f"<p style='text-align: center; color: #666;'>👤 Sesión activa: <b>{usuario_logueado}</b> | ⏰ Válida por 24h</p>", unsafe_allow_html=True)
 
 st.divider()
 
@@ -249,7 +324,7 @@ if selected_tab == 0:
             else:
                 existe = producto_existe(sku)
                 if existe:
-                    success, msg = agregar_stock(sku, cantidad, und_x_embalaje)
+                    success, msg = agregar_stock(sku, cantidad, und_x_embalaje, usuario_logueado)
                     if success:
                         st.success(msg)
                         for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
@@ -261,7 +336,7 @@ if selected_tab == 0:
                 else:
                     success, msg = crear_producto(sku, nombre, und_x_embalaje)
                     if success:
-                        agregar_stock(sku, cantidad, und_x_embalaje)
+                        agregar_stock(sku, cantidad, und_x_embalaje, usuario_logueado)
                         st.success(f"{msg} ✅")
                         for key in ['sku_seleccionado', 'nombre_seleccionado', 'und_seleccionado', 'stock_actual_seleccionado']:
                             if key in st.session_state:
@@ -319,17 +394,14 @@ elif selected_tab == 1:
             key="canal_venta")
         
         if st.button("✅ Guardar Venta", use_container_width=True, type="primary"):
-            if st.session_state.usuario:
-                sku = producto_sel.split(" - ")[0]
-                success, msg = agregar_salida(sku, cantidad_venta, canal, st.session_state.usuario)
-                if success:
-                    st.success(msg)
-                    st.balloons()
-                    st.rerun()
-                else:
-                    st.error(msg)
+            sku = producto_sel.split(" - ")[0]
+            success, msg = agregar_salida(sku, cantidad_venta, canal, usuario_logueado)
+            if success:
+                st.success(msg)
+                st.balloons()
+                st.rerun()
             else:
-                st.warning("Ingresa tu nombre en la barra lateral")
+                st.error(msg)
     else:
         st.warning("Agrega productos primero")
 
