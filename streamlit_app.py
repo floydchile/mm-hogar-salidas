@@ -170,7 +170,8 @@ def cargar_entradas():
 # ============= PANTALLA DE LOGIN =============
 
 if not sesion_activa():
-    st.markdown("<div style='text-align: center;'><h1>🔐 M&M Hogar</h1></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center;'><h1 style='font-size: 4rem;'>👮</h1></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center;'><h1>M&M Hogar</h1></div>", unsafe_allow_html=True)
     st.markdown("<div style='text-align: center;'><p>Sistema de Inventario - Acceso Restringido</p></div>", unsafe_allow_html=True)
     
     st.divider()
