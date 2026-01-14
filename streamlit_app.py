@@ -6,18 +6,8 @@ import pandas as pd
 from PIL import Image
 import secrets
 
-# Configurar página PRIMERO (ANTES de cualquier otra cosa)
+# Configurar página PRIMERO
 st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide", initial_sidebar_state="collapsed")
-
-# ============= COOKIES MANAGER =============
-try:
-    from streamlit_cookies_manager import CookieManager
-    cookies = CookieManager()
-    if not cookies.ready():
-        st.stop()
-except Exception as e:
-    st.error(f"Error con cookies: {str(e)}")
-    cookies = None
 
 # ============= REDUCIR ESPACIOS EN BLANCO =============
 st.markdown("""
@@ -63,7 +53,7 @@ USUARIOS_AUTORIZADOS = {
     "miguel": os.getenv("PASS_MIGUEL", "miguel123")
 }
 
-# ============= FUNCIONES DE AUTENTICACIÓN CON SESIONES PERSISTENTES =============
+# ============= FUNCIONES DE AUTENTICACIÓN CON QUERY_PARAMS =============
 
 def verificar_credenciales(usuario, contraseña):
     """Verifica usuario y contraseña"""
@@ -82,15 +72,12 @@ def crear_sesion_persistente(usuario):
             "creado_en": datetime.now().isoformat()
         }).execute()
         
-        # Guardar en COOKIES (persiste entre pestañas)
-        if cookies:
-            cookies["auth_token"] = token
-            cookies["usuario_actual"] = usuario
-            cookies.save()
-        
-        # Guardar también en session state
+        # Guardar en URL params + session state
         st.session_state.auth_token = token
         st.session_state.usuario_actual = usuario
+        
+        # Actualizar URL con token
+        st.query_params["token"] = token
         
         return True, token
     except Exception as e:
@@ -120,32 +107,27 @@ def validar_sesion_persistente(token):
         return False, None
 
 def cerrar_sesion(token):
-    """Elimina la sesión de la base de datos y cookies"""
+    """Elimina la sesión de la base de datos"""
     try:
         supabase.table("sesiones").delete().eq("token", token).execute()
-        if cookies:
-            cookies["auth_token"] = ""
-            cookies["usuario_actual"] = ""
-            cookies.save()
         st.session_state.auth_token = None
         st.session_state.usuario_actual = None
+        # Limpiar URL
+        st.query_params.clear()
     except:
         pass
 
 # ============= INICIALIZAR SESSION STATE =============
 
 if 'auth_token' not in st.session_state:
-    # Intentar obtener token de cookies primero
-    if cookies and "auth_token" in cookies:
-        st.session_state.auth_token = cookies.get("auth_token")
+    # Intentar obtener token de URL primero
+    if "token" in st.query_params:
+        st.session_state.auth_token = st.query_params["token"]
     else:
         st.session_state.auth_token = None
 
 if 'usuario_actual' not in st.session_state:
-    if cookies and "usuario_actual" in cookies:
-        st.session_state.usuario_actual = cookies.get("usuario_actual")
-    else:
-        st.session_state.usuario_actual = None
+    st.session_state.usuario_actual = None
 
 if 'selected_tab' not in st.session_state:
     st.session_state.selected_tab = 0
@@ -164,10 +146,7 @@ if token_actual:
         # Token inválido, limpiar
         st.session_state.auth_token = None
         st.session_state.usuario_actual = None
-        if cookies:
-            cookies["auth_token"] = ""
-            cookies["usuario_actual"] = ""
-            cookies.save()
+        st.query_params.clear()
 
 # ============= FUNCIONES DE NEGOCIO =============
 
