@@ -55,7 +55,7 @@ def crear_token_sesion(usuario):
 
 def sesion_activa():
     """Verifica si la sesión sigue siendo válida"""
-    if 'sesion' not in st.session_state:
+    if 'sesion' not in st.session_state or st.session_state.sesion is None:
         return False
     
     sesion = st.session_state.sesion
