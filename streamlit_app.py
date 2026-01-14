@@ -180,7 +180,7 @@ if not sesion_activa():
     with col2:
         st.markdown("### Inicia Sesión")
         
-        usuario_input = st.text_input("👤 Usuario:", placeholder="dany, pau o miguel")
+        usuario_input = st.text_input("👤 Usuario:", placeholder="Ingresa tu usuario")
         contraseña_input = st.text_input("🔑 Contraseña:", type="password", placeholder="Tu contraseña")
         
         col_btn1, col_btn2 = st.columns(2)
@@ -197,8 +197,6 @@ if not sesion_activa():
         with col_btn2:
             if st.button("🗑️ Limpiar", use_container_width=True):
                 st.rerun()
-        
-        st.info("**Usuarios disponibles:**\n- dany\n- pau\n- miguel")
     
     st.stop()
 
