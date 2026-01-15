@@ -100,10 +100,9 @@ if not st.session_state.usuario_ingresado:
 st.title("📦 M&M Hogar - Gestión")
 t1, t2, t3, t4 = st.tabs(["🛒 Movimientos", "📋 Historial", "📈 Stock e Inventario", "⚙️ Configuración"])
 
-# --- TAB 1: MOVIMIENTOS (INVERTIDO Y SIN +/-) ---
+# --- TAB 1, 2 y 3 se mantienen igual ---
 with t1:
     col_venta, col_entrada = st.columns(2)
-    
     with col_venta:
         st.subheader("🚀 Registro de Venta")
         sku_out = st.text_input("Buscar para Venta:", key=f"out_search_{st.session_state.form_count}").upper()
@@ -111,7 +110,6 @@ with t1:
             prods_v = buscar_productos(sku_out)
             if prods_v:
                 p_v_sel = st.selectbox("Seleccionar:", prods_v, format_func=lambda x: f"{x['sku']} - {x['nombre']} (Disp: {x['stock_total']})", key=f"sb_out_{st.session_state.form_count}")
-                # label_visibility="collapsed" ayuda a que se vea más limpio
                 cant_v = st.number_input("Cantidad:", min_value=1, key=f"n2_{st.session_state.form_count}")
                 canal = st.selectbox("Canal:", ["Mercadolibre", "Falabella", "Walmart", "Hites", "Paris", "Web", "WhatsApp", "Retiro"], key=f"canal_{st.session_state.form_count}")
                 if p_v_sel['stock_total'] < cant_v: st.warning(f"Stock insuficiente: {p_v_sel['stock_total']}")
@@ -163,10 +161,9 @@ with t3:
         df_view['Valor Unitario'] = df_view['Unitario'].apply(formato_clp)
         st.dataframe(df_view[["sku", "nombre", "stock_total", "und_x_embalaje", "Costo Contenedor", "Valor Unitario"]], use_container_width=True, hide_index=True)
 
-# --- TAB 4: CONFIGURACIÓN (CORREGIDA) ---
+# --- TAB 4: CONFIGURACIÓN (SOLUCIÓN AL ERROR DE DUPLICIDAD) ---
 with t4:
     st.subheader("Configuración de Productos")
-    
     c_edit, c_new = st.columns(2)
     
     with c_edit:
@@ -175,25 +172,30 @@ with t4:
         if edit_query:
             prods_edit = buscar_productos(edit_query)
             if prods_edit:
-                p_to_edit = st.selectbox("Seleccione producto:", prods_edit, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
+                p_to_edit = st.selectbox("Seleccione:", prods_edit, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
                 
                 with st.form("form_edit"):
-                    # El SKU es la llave primaria. Si no cambia, no da error de duplicado.
-                    new_sku = st.text_input("SKU:", value=p_to_edit['sku']).upper().strip()
+                    sku_actual = p_to_edit['sku']
+                    new_sku = st.text_input("SKU:", value=sku_actual).upper().strip()
                     new_name = st.text_input("Nombre:", value=p_to_edit['nombre'])
                     new_und = st.number_input("Unidades x Embalaje:", min_value=1, value=int(p_to_edit['und_x_embalaje']))
                     new_costo = st.number_input("Costo Contenedor (CLP):", min_value=0, value=int(p_to_edit['precio_costo_contenedor']))
                     
                     if st.form_submit_button("Actualizar Producto", type="primary", use_container_width=True):
                         try:
-                            # Usamos la llave original para filtrar y actualizamos
-                            supabase.table("productos").update({
-                                "sku": new_sku,
+                            # 1. Preparamos datos SIN el SKU primero
+                            update_payload = {
                                 "nombre": new_name,
                                 "und_x_embalaje": new_und,
                                 "precio_costo_contenedor": new_costo
-                            }).eq("sku", p_to_edit['sku']).execute()
-                            st.success("Actualizado con éxito")
+                            }
+                            # 2. SOLO si el SKU cambió realmente, lo añadimos al payload
+                            if new_sku != sku_actual:
+                                update_payload["sku"] = new_sku
+                            
+                            # 3. Ejecutamos la actualización filtrando por el SKU original
+                            supabase.table("productos").update(update_payload).eq("sku", sku_actual).execute()
+                            st.success("✅ Producto actualizado correctamente")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error al actualizar: {e}")
@@ -213,6 +215,6 @@ with t4:
                             "sku": f_sku, "nombre": f_nom, "und_x_embalaje": f_und, 
                             "stock_total": 0, "precio_costo_contenedor": f_costo
                         }).execute()
-                        st.success("Creado con éxito")
+                        st.success("✅ Creado con éxito")
                         st.rerun()
                     except: st.error("El SKU ya existe.")
