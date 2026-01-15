@@ -76,7 +76,10 @@ def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
 
 # --- INTERFAZ USUARIO ---
 if 'usuario_ingresado' not in st.session_state: st.session_state.usuario_ingresado = None
+# Contador para limpiar formularios de movimientos
 if 'form_count' not in st.session_state: st.session_state.form_count = 0
+# Contador específico para limpiar el formulario de edición
+if 'edit_form_count' not in st.session_state: st.session_state.edit_form_count = 0
 
 with st.sidebar:
     if logo: st.image(logo, width=150)
@@ -104,7 +107,6 @@ t1, t2, t3, t4 = st.tabs(["🛒 Movimientos", "📋 Historial", "📈 Stock e In
 # --- TAB 1: MOVIMIENTOS ---
 with t1:
     col_venta, col_entrada = st.columns(2)
-    
     with col_venta:
         st.subheader("🚀 Registro de Venta")
         sku_out = st.text_input("Buscar para Venta:", key=f"out_search_{st.session_state.form_count}").upper()
@@ -136,85 +138,12 @@ with t1:
                         st.session_state.form_count += 1
                         st.success(f"Entrada registrada."); st.rerun()
 
+# --- TAB 2: HISTORIAL (Incluye Ediciones) ---
 with t2:
     st.subheader("Movimientos Recientes")
     hist = []
+    # Entradas
     ent = supabase.table("entradas").select("*").order("fecha", desc=True).limit(30).execute().data
     for e in ent: e['Tipo'] = "🟢 Entrada"; hist.append(e)
-    sal = supabase.table("salidas").select("*").order("fecha", desc=True).limit(30).execute().data
-    for s in sal: s['Tipo'] = "🔴 Venta"; hist.append(s)
-    if hist:
-        df_h = pd.DataFrame(hist).sort_values("fecha", ascending=False)
-        st.dataframe(df_h[["fecha", "Tipo", "sku", "cantidad", "usuario"]], use_container_width=True, hide_index=True)
-
-with t3:
-    st.subheader("Estado de Inventario")
-    all_p = buscar_productos()
-    if all_p:
-        df = pd.DataFrame(all_p)
-        df['Unitario'] = df['precio_costo_contenedor'] / df['und_x_embalaje'].replace(0, 1)
-        df['Inversion_Fila'] = df['Unitario'] * df['stock_total']
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Inversión Total", formato_clp(df['Inversion_Fila'].sum()))
-        m2.metric("Total Unidades", int(df['stock_total'].sum()))
-        m3.metric("SKUs Activos", len(df))
-        df_view = df.copy()
-        df_view['Costo Contenedor'] = df_view['precio_costo_contenedor'].apply(formato_clp)
-        df_view['Valor Unitario'] = df_view['Unitario'].apply(formato_clp)
-        st.dataframe(df_view[["sku", "nombre", "stock_total", "und_x_embalaje", "Costo Contenedor", "Valor Unitario"]], use_container_width=True, hide_index=True)
-
-# --- TAB 4: CONFIGURACIÓN (SOLUCIÓN DEFINITIVA) ---
-with t4:
-    st.subheader("Configuración de Productos")
-    c_edit, c_new = st.columns(2)
-    
-    with c_edit:
-        st.markdown("### ✏️ Editar Producto")
-        edit_query = st.text_input("Buscar para editar:", key="edit_search").upper()
-        if edit_query:
-            prods_edit = buscar_productos(edit_query)
-            if prods_edit:
-                p_to_edit = st.selectbox("Seleccione producto:", prods_edit, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
-                
-                with st.form("form_edit"):
-                    # CAMBIO: El SKU se muestra pero está deshabilitado para evitar el error 23505
-                    sku_fijo = p_to_edit['sku']
-                    st.text_input("SKU (Identificador único):", value=sku_fijo, disabled=True)
-                    
-                    new_name = st.text_input("Nombre:", value=p_to_edit['nombre'])
-                    new_und = st.number_input("Unidades x Embalaje:", min_value=1, value=int(p_to_edit['und_x_embalaje']))
-                    new_costo = st.number_input("Costo Contenedor (CLP):", min_value=0, value=int(p_to_edit['precio_costo_contenedor']))
-                    
-                    if st.form_submit_button("Actualizar Producto", type="primary", use_container_width=True):
-                        try:
-                            # Al NO incluir la llave "sku" en el diccionario de update, 
-                            # Supabase no intenta validar duplicidad y el error desaparece.
-                            supabase.table("productos").update({
-                                "nombre": new_name,
-                                "und_x_embalaje": new_und,
-                                "precio_costo_contenedor": new_costo
-                            }).eq("sku", sku_fijo).execute()
-                            
-                            st.success(f"✅ {sku_fijo} actualizado correctamente")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error al actualizar: {e}")
-
-    with c_new:
-        st.markdown("### 🆕 Nuevo Producto")
-        with st.form("crear_nuevo", clear_on_submit=True):
-            f_sku = st.text_input("SKU:").upper().strip()
-            f_nom = st.text_input("Nombre:")
-            f_und = st.number_input("Unidades x Embalaje:", min_value=1, value=1)
-            f_costo = st.number_input("Costo Contenedor Inicial (CLP):", min_value=0, value=0)
-            
-            if st.form_submit_button("Crear Producto", use_container_width=True):
-                if f_sku and f_nom:
-                    try:
-                        supabase.table("productos").insert({
-                            "sku": f_sku, "nombre": f_nom, "und_x_embalaje": f_und, 
-                            "stock_total": 0, "precio_costo_contenedor": f_costo
-                        }).execute()
-                        st.success("✅ Creado con éxito")
-                        st.rerun()
-                    except: st.error("El SKU ya existe.")
+    # Salidas
+    sal = supabase.table("salidas").select("*").order("fecha", desc
