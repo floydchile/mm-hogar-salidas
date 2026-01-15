@@ -102,34 +102,58 @@ with t1:
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("📥 Entrada de Stock")
-        sku_in = st.text_input("Buscar SKU para Entrada:").upper()
-        if sku_in:
-            prods = buscar_productos(sku_in)
+        query_in = st.text_input("Buscar producto (SKU o Nombre):", key="in_search").upper()
+        if query_in:
+            prods = buscar_productos(query_in)
             if prods:
-                p = prods[0]
-                st.info(f"Producto: {p['nombre']} | Stock: {p['stock_total']}")
+                # CORRECCIÓN: Selección manual si hay varios resultados
+                p_sel = st.selectbox(
+                    "Selecciona el producto exacto:", 
+                    prods, 
+                    format_func=lambda x: f"{x['sku']} - {x['nombre']} (Stock: {x['stock_total']})",
+                    key="sb_in"
+                )
+                
                 cant = st.number_input("Cantidad a ingresar:", min_value=1, key="n1")
-                costo = st.number_input("Costo Contenedor (CLP):", value=int(p['precio_costo_contenedor']), step=1000)
-                if st.button("📥 Confirmar Entrada", type="primary"):
-                    ok, msg = registrar_movimiento("entrada", p['sku'], cant, p['und_x_embalaje'], st.session_state.usuario_ingresado, costo)
-                    if ok: st.success(f"Entrada registrada. Costo: {formato_clp(costo)}"); st.balloons()
+                costo = st.number_input("Costo Contenedor (CLP):", value=int(p_sel['precio_costo_contenedor']), step=1000)
+                
+                if st.button("📥 Confirmar Entrada", type="primary", use_container_width=True):
+                    ok, msg = registrar_movimiento("entrada", p_sel['sku'], cant, p_sel['und_x_embalaje'], st.session_state.usuario_ingresado, costo)
+                    if ok: 
+                        st.success(f"Entrada registrada. Costo: {formato_clp(costo)}")
+                        st.balloons()
                     else: st.error(msg)
-            else: st.warning("SKU no encontrado.")
+            else:
+                st.warning("Producto no encontrado.")
 
     with c2:
         st.subheader("🚀 Registro de Venta")
-        sku_out = st.text_input("Buscar SKU para Venta:").upper()
-        if sku_out:
-            prods = buscar_productos(sku_out)
-            if prods:
-                p = prods[0]
-                st.info(f"Disponible: {p['stock_total']} unidades")
+        query_out = st.text_input("Buscar producto (SKU o Nombre):", key="out_search").upper()
+        if query_out:
+            prods_v = buscar_productos(query_out)
+            if prods_v:
+                # CORRECCIÓN: Selección manual para ventas
+                p_v_sel = st.selectbox(
+                    "Selecciona para vender:", 
+                    prods_v, 
+                    format_func=lambda x: f"{x['sku']} - {x['nombre']} (Disp: {x['stock_total']})",
+                    key="sb_out"
+                )
+                
                 cant_v = st.number_input("Cantidad a vender:", min_value=1, key="n2")
                 canal = st.selectbox("Canal:", ["Mercadolibre", "Falabella", "Walmart", "Hites", "Paris", "Web", "WhatsApp", "Retiro"])
-                if st.button("🚀 Finalizar Venta", type="primary"):
-                    ok, msg = registrar_movimiento("salida", p['sku'], cant_v, canal, st.session_state.usuario_ingresado)
-                    if ok: st.success("Venta guardada exitosamente!"); st.rerun()
+                
+                if p_v_sel['stock_total'] < cant_v:
+                    st.warning(f"Stock insuficiente. Disponible: {p_v_sel['stock_total']}")
+                
+                if st.button("🚀 Finalizar Venta", type="primary", use_container_width=True):
+                    ok, msg = registrar_movimiento("salida", p_v_sel['sku'], cant_v, canal, st.session_state.usuario_ingresado)
+                    if ok: 
+                        st.success("Venta guardada exitosamente!")
+                        st.rerun()
                     else: st.error(msg)
+            else:
+                st.warning("Producto no encontrado.")
 
 with t2:
     st.subheader("Movimientos Recientes")
