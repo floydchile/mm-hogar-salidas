@@ -76,9 +76,7 @@ def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
 
 # --- INTERFAZ USUARIO ---
 if 'usuario_ingresado' not in st.session_state: st.session_state.usuario_ingresado = None
-# Contador para limpiar formularios de movimientos
 if 'form_count' not in st.session_state: st.session_state.form_count = 0
-# Contador específico para limpiar el formulario de edición
 if 'edit_form_count' not in st.session_state: st.session_state.edit_form_count = 0
 
 with st.sidebar:
@@ -138,12 +136,16 @@ with t1:
                         st.session_state.form_count += 1
                         st.success(f"Entrada registrada."); st.rerun()
 
-# --- TAB 2: HISTORIAL (Incluye Ediciones) ---
+# --- TAB 2: HISTORIAL ---
 with t2:
     st.subheader("Movimientos Recientes")
     hist = []
-    # Entradas
-    ent = supabase.table("entradas").select("*").order("fecha", desc=True).limit(30).execute().data
-    for e in ent: e['Tipo'] = "🟢 Entrada"; hist.append(e)
-    # Salidas
-    sal = supabase.table("salidas").select("*").order("fecha", desc
+    try:
+        ent = supabase.table("entradas").select("*").order("fecha", desc=True).limit(30).execute().data
+        for e in ent: e['Tipo'] = "🟢 Entrada"; hist.append(e)
+        
+        sal = supabase.table("salidas").select("*").order("fecha", desc=True).limit(30).execute().data
+        for s in sal: s['Tipo'] = "🔴 Venta"; hist.append(s)
+        
+        if hist:
+            df_h = pd.DataFrame(hist).sort_values("fecha
