@@ -77,6 +77,8 @@ def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
 # --- INTERFAZ USUARIO ---
 if 'usuario_ingresado' not in st.session_state: st.session_state.usuario_ingresado = None
 if 'form_count' not in st.session_state: st.session_state.form_count = 0
+# NUEVO: Contador para resetear el formulario de edición
+if 'edit_reset_counter' not in st.session_state: st.session_state.edit_reset_counter = 0
 
 with st.sidebar:
     if logo: st.image(logo, width=150)
@@ -104,7 +106,6 @@ t1, t2, t3, t4 = st.tabs(["🛒 Movimientos", "📋 Historial", "📈 Stock e In
 # --- TAB 1: MOVIMIENTOS ---
 with t1:
     col_venta, col_entrada = st.columns(2)
-    
     with col_venta:
         st.subheader("🚀 Registro de Venta")
         sku_out = st.text_input("Buscar para Venta:", key=f"out_search_{st.session_state.form_count}").upper()
@@ -136,6 +137,7 @@ with t1:
                         st.session_state.form_count += 1
                         st.success(f"Entrada registrada."); st.rerun()
 
+# --- TAB 2: HISTORIAL ---
 with t2:
     st.subheader("Movimientos Recientes")
     hist = []
@@ -147,6 +149,7 @@ with t2:
         df_h = pd.DataFrame(hist).sort_values("fecha", ascending=False)
         st.dataframe(df_h[["fecha", "Tipo", "sku", "cantidad", "usuario"]], use_container_width=True, hide_index=True)
 
+# --- TAB 3: STOCK ---
 with t3:
     st.subheader("Estado de Inventario")
     all_p = buscar_productos()
@@ -163,21 +166,23 @@ with t3:
         df_view['Valor Unitario'] = df_view['Unitario'].apply(formato_clp)
         st.dataframe(df_view[["sku", "nombre", "stock_total", "und_x_embalaje", "Costo Contenedor", "Valor Unitario"]], use_container_width=True, hide_index=True)
 
-# --- TAB 4: CONFIGURACIÓN (SOLUCIÓN DEFINITIVA) ---
+# --- TAB 4: CONFIGURACIÓN ---
 with t4:
     st.subheader("Configuración de Productos")
     c_edit, c_new = st.columns(2)
     
     with c_edit:
         st.markdown("### ✏️ Editar Producto")
-        edit_query = st.text_input("Buscar para editar:", key="edit_search").upper()
+        # El buscador ahora tiene una KEY dinámica ligada a edit_reset_counter
+        edit_query = st.text_input("Buscar para editar:", key=f"edit_search_box_{st.session_state.edit_reset_counter}").upper()
         if edit_query:
             prods_edit = buscar_productos(edit_query)
             if prods_edit:
-                p_to_edit = st.selectbox("Seleccione producto:", prods_edit, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
+                # El selectbox también necesita llave dinámica
+                p_to_edit = st.selectbox("Seleccione producto:", prods_edit, format_func=lambda x: f"{x['sku']} - {x['nombre']}", key=f"edit_select_{st.session_state.edit_reset_counter}")
                 
-                with st.form("form_edit"):
-                    # CAMBIO: El SKU se muestra pero está deshabilitado para evitar el error 23505
+                # El formulario entero tiene una llave que cambia tras el éxito
+                with st.form(key=f"form_edit_dyn_{st.session_state.edit_reset_counter}"):
                     sku_fijo = p_to_edit['sku']
                     st.text_input("SKU (Identificador único):", value=sku_fijo, disabled=True)
                     
@@ -187,15 +192,25 @@ with t4:
                     
                     if st.form_submit_button("Actualizar Producto", type="primary", use_container_width=True):
                         try:
-                            # Al NO incluir la llave "sku" en el diccionario de update, 
-                            # Supabase no intenta validar duplicidad y el error desaparece.
+                            # 1. Actualizar Datos del Producto
                             supabase.table("productos").update({
                                 "nombre": new_name,
                                 "und_x_embalaje": new_und,
                                 "precio_costo_contenedor": new_costo
                             }).eq("sku", sku_fijo).execute()
                             
-                            st.success(f"✅ {sku_fijo} actualizado correctamente")
+                            # 2. Registrar en Historial (Cantidad 0 para no alterar stock)
+                            # Se añade un sufijo (EDIT) al usuario para que se entienda en la pestaña historial
+                            supabase.table("entradas").insert({
+                                "sku": sku_fijo,
+                                "cantidad": 0,
+                                "usuario": f"{st.session_state.usuario_ingresado} (EDIT)"
+                            }).execute()
+                            
+                            # 3. Éxito y Limpieza
+                            st.session_state.edit_reset_counter += 1
+                            st.success(f"✅ {sku_fijo} actualizado y registrado en historial.")
+                            # Pequeña pausa visual antes de recargar
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error al actualizar: {e}")
