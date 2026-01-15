@@ -4,33 +4,24 @@ from datetime import datetime
 import os
 import pandas as pd
 from PIL import Image
-import re
 
 # --- CONFIGURACIÓN Y ESTILOS ---
 st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide")
 
+# Estilos CSS corregidos: Invertir columnas y quitar botones +/-
 st.markdown("""<style>
     .block-container {padding-top: 1rem; padding-bottom: 0rem;}
     .stMetric {background-color: #f8f9fa; border-radius: 10px; padding: 10px; border: 1px solid #eee;}
     [data-testid="stMetricValue"] {font-size: 1.8rem;}
-    /* Quitar botones +/- de los inputs numéricos */
-    button.step-up, button.step-down { display: none; }
+    /* Quita los botones de incremento/decremento en Chrome, Safari, Edge y Firefox */
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; }
 </style>""", unsafe_allow_html=True)
 
-# Carga de Logo
-try:
-    logo = Image.open("assets/mym_hogar.png")
-except:
-    logo = None
-
 # --- CONEXIÓN ---
-SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://nijzonhfxyihpgozinge.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_KEY or not SUPABASE_URL:
-    st.error("❌ Error: Faltan las credenciales de Supabase en Railway.")
-    st.stop()
 
 @st.cache_resource
 def init_supabase():
@@ -39,10 +30,7 @@ def init_supabase():
 supabase: Client = init_supabase()
 USUARIOS_VALIDOS = ["pau", "dany", "miguel"]
 
-# --- FUNCIONES AUXILIARES ---
-def formato_clp(valor):
-    return f"${int(valor):,}".replace(",", ".")
-
+# --- FUNCIONES ---
 def buscar_productos(query: str = ""):
     try:
         db_query = supabase.table("productos").select("*")
@@ -53,167 +41,116 @@ def buscar_productos(query: str = ""):
         st.error(f"Error al buscar: {e}")
         return []
 
-# --- LÓGICA DE NEGOCIO ---
-def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
-    try:
-        if tipo == "entrada":
-            if precio is not None:
-                supabase.table("productos").update({"precio_costo_contenedor": float(precio)}).eq("sku", sku).execute()
-            supabase.rpc("registrar_entrada", {
-                "p_sku": sku, "p_cantidad": int(cantidad), 
-                "p_und_x_embalaje": extra_val, "p_usuario": usuario
-            }).execute()
-        else:
-            res = supabase.rpc("registrar_salida", {
-                "p_sku": sku, "p_cantidad": int(cantidad), 
-                "p_canal": extra_val, "p_usuario": usuario
-            }).execute()
-            if "ERROR" in res.data: return False, res.data
-        return True, "Operación exitosa"
-    except Exception as e:
-        return False, str(e)
-
-# --- INTERFAZ USUARIO ---
-if 'usuario_ingresado' not in st.session_state: st.session_state.usuario_ingresado = None
+# --- INTERFAZ ---
 if 'form_count' not in st.session_state: st.session_state.form_count = 0
+if 'usuario_ingresado' not in st.session_state: st.session_state.usuario_ingresado = None
 
+# Sidebar (Login)
 with st.sidebar:
-    if logo: st.image(logo, width=150)
     if st.session_state.usuario_ingresado:
         st.success(f"Sesión: {st.session_state.usuario_ingresado.upper()}")
-        if st.button("🚪 Cerrar Sesión", use_container_width=True):
+        if st.button("🚪 Cerrar Sesión"):
             st.session_state.usuario_ingresado = None
             st.rerun()
     else:
         user = st.text_input("Usuario:").lower().strip()
-        if st.button("✅ Ingresar", use_container_width=True, type="primary"):
+        if st.button("Ingresar"):
             if user in USUARIOS_VALIDOS:
                 st.session_state.usuario_ingresado = user
                 st.rerun()
-            else: st.error("Usuario inválido")
 
 if not st.session_state.usuario_ingresado:
-    st.title("📦 M&M Hogar")
-    st.info("👋 Por favor ingresa tu usuario en el menú lateral.")
+    st.warning("Inicia sesión para operar.")
     st.stop()
 
-st.title("📦 M&M Hogar - Gestión")
-t1, t2, t3, t4 = st.tabs(["🛒 Movimientos", "📋 Historial", "📈 Stock e Inventario", "⚙️ Configuración"])
+t1, t2, t3, t4 = st.tabs(["🛒 Movimientos", "📋 Historial", "📈 Stock", "⚙️ Configuración"])
 
-# --- TAB 1: MOVIMIENTOS (VENTA IZQ, ENTRADA DER) ---
+# --- TAB 1: MOVIMIENTOS (ORDEN INVERTIDO) ---
 with t1:
-    col_venta, col_entrada = st.columns(2)
+    c_venta, c_entrada = st.columns(2)
     
-    with col_venta:
+    with c_venta: # Venta a la izquierda
         st.subheader("🚀 Registro de Venta")
-        sku_out = st.text_input("Buscar para Venta:", key=f"out_search_{st.session_state.form_count}").upper()
-        if sku_out:
-            prods_v = buscar_productos(sku_out)
-            if prods_v:
-                p_v_sel = st.selectbox("Seleccionar:", prods_v, format_func=lambda x: f"{x['sku']} - {x['nombre']} (Disp: {x['stock_total']})", key=f"sb_out_{st.session_state.form_count}")
-                cant_v = st.number_input("Cantidad:", min_value=1, key=f"n2_{st.session_state.form_count}")
-                canal = st.selectbox("Canal:", ["Mercadolibre", "Falabella", "Walmart", "Hites", "Paris", "Web", "WhatsApp", "Retiro"], key=f"canal_{st.session_state.form_count}")
-                if p_v_sel['stock_total'] < cant_v: st.warning(f"Stock insuficiente: {p_v_sel['stock_total']}")
-                if st.button("🚀 Finalizar Venta", type="primary", use_container_width=True):
-                    ok, msg = registrar_movimiento("salida", p_v_sel['sku'], cant_v, canal, st.session_state.usuario_ingresado)
-                    if ok: 
-                        st.session_state.form_count += 1
-                        st.success("Venta guardada!"); st.rerun()
+        search_v = st.text_input("Buscar producto:", key=f"sv_{st.session_state.form_count}")
+        res_v = buscar_productos(search_v)
+        if search_v and res_v:
+            p_v = st.selectbox("Seleccionar:", res_v, format_func=lambda x: f"{x['sku']} - {x['nombre']}", key=f"selv_{st.session_state.form_count}")
+            cant_v = st.number_input("Cantidad:", min_value=1, key=f"nv_{st.session_state.form_count}")
+            canal = st.selectbox("Canal:", ["Mercadolibre", "Falabella", "Walmart", "Web", "WhatsApp", "Retiro"], key=f"cv_{st.session_state.form_count}")
+            if st.button("Finalizar Venta", type="primary"):
+                res = supabase.rpc("registrar_salida", {"p_sku": p_v['sku'], "p_cantidad": int(cant_v), "p_canal": canal, "p_usuario": st.session_state.usuario_ingresado}).execute()
+                if "ERROR" not in str(res.data):
+                    st.session_state.form_count += 1
+                    st.success("Venta registrada"); st.rerun()
+                else: st.error(res.data)
 
-    with col_entrada:
+    with c_entrada: # Entrada a la derecha
         st.subheader("📥 Entrada de Stock")
-        sku_in = st.text_input("Buscar para Entrada:", key=f"in_search_{st.session_state.form_count}").upper()
-        if sku_in:
-            prods = buscar_productos(sku_in)
-            if prods:
-                p_sel = st.selectbox("Seleccionar:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']}", key=f"sb_in_{st.session_state.form_count}")
-                cant = st.number_input("Cantidad a ingresar:", min_value=1, key=f"n1_{st.session_state.form_count}")
-                costo = st.number_input("Costo Contenedor (CLP):", value=int(p_sel['precio_costo_contenedor']), step=1, key=f"c1_{st.session_state.form_count}")
-                if st.button("📥 Confirmar Entrada", type="primary", use_container_width=True):
-                    ok, msg = registrar_movimiento("entrada", p_sel['sku'], cant, p_sel['und_x_embalaje'], st.session_state.usuario_ingresado, costo)
-                    if ok: 
-                        st.session_state.form_count += 1
-                        st.success(f"Entrada registrada."); st.rerun()
+        search_e = st.text_input("Buscar producto:", key=f"se_{st.session_state.form_count}")
+        res_e = buscar_productos(search_e)
+        if search_e and res_e:
+            p_e = st.selectbox("Seleccionar:", res_e, format_func=lambda x: f"{x['sku']} - {x['nombre']}", key=f"sele_{st.session_state.form_count}")
+            cant_e = st.number_input("Unidades:", min_value=1, key=f"ne_{st.session_state.form_count}")
+            costo_e = st.number_input("Costo Contenedor:", value=float(p_e['precio_costo_contenedor']), key=f"ce_{st.session_state.form_count}")
+            if st.button("Confirmar Entrada", type="primary"):
+                supabase.table("productos").update({"precio_costo_contenedor": float(costo_e)}).eq("sku", p_e['sku']).execute()
+                supabase.rpc("registrar_entrada", {"p_sku": p_e['sku'], "p_cantidad": int(cant_e), "p_und_x_embalaje": p_e['und_x_embalaje'], "p_usuario": st.session_state.usuario_ingresado}).execute()
+                st.session_state.form_count += 1
+                st.success("Entrada registrada"); st.rerun()
 
-with t2:
-    st.subheader("Movimientos Recientes")
-    hist = []
-    ent = supabase.table("entradas").select("*").order("fecha", desc=True).limit(30).execute().data
-    for e in ent: e['Tipo'] = "🟢 Entrada"; hist.append(e)
-    sal = supabase.table("salidas").select("*").order("fecha", desc=True).limit(30).execute().data
-    for s in sal: s['Tipo'] = "🔴 Venta"; hist.append(s)
-    if hist:
-        df_h = pd.DataFrame(hist).sort_values("fecha", ascending=False)
-        st.dataframe(df_h[["fecha", "Tipo", "sku", "cantidad", "usuario"]], use_container_width=True, hide_index=True)
-
-with t3:
-    st.subheader("Estado de Inventario")
-    all_p = buscar_productos()
-    if all_p:
-        df = pd.DataFrame(all_p)
-        df['Unitario'] = df['precio_costo_contenedor'] / df['und_x_embalaje'].replace(0, 1)
-        df['Inversion_Fila'] = df['Unitario'] * df['stock_total']
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Inversión Total", formato_clp(df['Inversion_Fila'].sum()))
-        m2.metric("Total Unidades", int(df['stock_total'].sum()))
-        m3.metric("SKUs Activos", len(df))
-        df_view = df.copy()
-        df_view['Costo Contenedor'] = df_view['precio_costo_contenedor'].apply(formato_clp)
-        df_view['Valor Unitario'] = df_view['Unitario'].apply(formato_clp)
-        st.dataframe(df_view[["sku", "nombre", "stock_total", "und_x_embalaje", "Costo Contenedor", "Valor Unitario"]], use_container_width=True, hide_index=True)
-
-# --- TAB 4: CONFIGURACIÓN (CORRECCIÓN DEFINITIVA DE DUPLICADO) ---
+# --- TAB 4: CONFIGURACIÓN (SOLUCIÓN ERROR DUPLICADO) ---
 with t4:
-    st.subheader("Configuración de Productos")
-    c_edit, c_new = st.columns(2)
+    st.subheader("⚙️ Configuración de Productos")
+    col_edit, col_new = st.columns(2)
     
-    with c_edit:
+    with col_edit:
         st.markdown("### ✏️ Editar Producto")
-        edit_query = st.text_input("Buscar para editar:", key="edit_search").upper()
-        if edit_query:
-            prods_edit = buscar_productos(edit_query)
-            if prods_edit:
-                p_to_edit = st.selectbox("Seleccione:", prods_edit, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
+        s_edit = st.text_input("Buscar para editar:", key="s_edit").upper()
+        if s_edit:
+            prods = buscar_productos(s_edit)
+            if prods:
+                p_edit = st.selectbox("Elegir producto:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
                 
-                with st.form("form_edit"):
-                    new_sku = st.text_input("SKU:", value=p_to_edit['sku']).upper().strip()
-                    new_name = st.text_input("Nombre:", value=p_to_edit['nombre'])
-                    new_und = st.number_input("Unidades x Embalaje:", min_value=1, value=int(p_to_edit['und_x_embalaje']))
-                    new_costo = st.number_input("Costo Contenedor (CLP):", min_value=0, value=int(p_to_edit['precio_costo_contenedor']))
+                with st.form("edit_form"):
+                    # Guardamos el SKU original para el filtro .eq()
+                    sku_original = p_edit['sku']
                     
-                    if st.form_submit_button("Actualizar Producto", type="primary", use_container_width=True):
+                    new_sku = st.text_input("SKU:", value=p_edit['sku']).upper().strip()
+                    new_nom = st.text_input("Nombre:", value=p_edit['nombre'])
+                    new_und = st.number_input("Unidades x Embalaje:", min_value=1, value=int(p_edit['und_x_embalaje']))
+                    new_cost = st.number_input("Costo Contenedor (CLP):", min_value=0, value=int(p_edit['precio_costo_contenedor']))
+                    
+                    if st.form_submit_button("Actualizar Producto", type="primary"):
                         try:
-                            # Construimos el diccionario de actualización dinámicamente
+                            # Preparamos los datos a actualizar
                             update_data = {
-                                "nombre": new_name,
+                                "nombre": new_nom,
                                 "und_x_embalaje": new_und,
-                                "precio_costo_contenedor": new_costo
+                                "precio_costo_contenedor": new_cost
                             }
-                            # Solo intentamos cambiar el SKU si el usuario escribió algo distinto
-                            if new_sku != p_to_edit['sku']:
+                            # Solo intentamos actualizar el SKU si cambió (así evitamos el error 23505)
+                            if new_sku != sku_original:
                                 update_data["sku"] = new_sku
                             
-                            supabase.table("productos").update(update_data).eq("sku", p_to_edit['sku']).execute()
-                            st.success("✅ Actualizado con éxito")
-                            st.rerun()
+                            supabase.table("productos").update(update_data).eq("sku", sku_original).execute()
+                            st.success("✅ Producto actualizado"); st.rerun()
                         except Exception as e:
                             st.error(f"Error al actualizar: {e}")
 
-    with c_new:
+    with col_new:
         st.markdown("### 🆕 Nuevo Producto")
-        with st.form("crear_nuevo", clear_on_submit=True):
-            f_sku = st.text_input("SKU:").upper().strip()
-            f_nom = st.text_input("Nombre:")
-            f_und = st.number_input("Unidades x Embalaje:", min_value=1, value=1)
-            f_costo = st.number_input("Costo Contenedor Inicial (CLP):", min_value=0, value=0)
+        with st.form("new_form", clear_on_submit=True):
+            n_sku = st.text_input("SKU:").upper().strip()
+            n_nom = st.text_input("Nombre:")
+            n_und = st.number_input("Unidades x Embalaje:", min_value=1, value=1)
+            n_cost = st.number_input("Costo Contenedor Inicial (CLP):", min_value=0, value=0)
             
-            if st.form_submit_button("Crear Producto", use_container_width=True):
-                if f_sku and f_nom:
+            if st.form_submit_button("Crear Producto"):
+                if n_sku and n_nom:
                     try:
                         supabase.table("productos").insert({
-                            "sku": f_sku, "nombre": f_nom, "und_x_embalaje": f_und, 
-                            "stock_total": 0, "precio_costo_contenedor": f_costo
+                            "sku": n_sku, "nombre": n_nom, "und_x_embalaje": n_und, 
+                            "stock_total": 0, "precio_costo_contenedor": n_cost
                         }).execute()
-                        st.success("✅ Creado con éxito")
-                        st.rerun()
-                    except: st.error("❌ El SKU ya existe.")
+                        st.success("✅ Creado correctamente"); st.rerun()
+                    except: st.error("El SKU ya existe")
