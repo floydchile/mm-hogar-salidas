@@ -129,23 +129,4 @@ with t1:
             if prods:
                 p_sel = st.selectbox("Seleccionar:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']}", key=f"sb_in_{st.session_state.form_count}")
                 cant = st.number_input("Cantidad:", min_value=1, key=f"n1_{st.session_state.form_count}")
-                costo = st.number_input("Costo Contenedor (CLP):", value=int(p_sel['precio_costo_contenedor']), step=1, key=f"c1_{st.session_state.form_count}")
-                if st.button("📥 Confirmar Entrada", type="primary", use_container_width=True):
-                    ok, msg = registrar_movimiento("entrada", p_sel['sku'], cant, p_sel['und_x_embalaje'], st.session_state.usuario_ingresado, costo)
-                    if ok: 
-                        st.session_state.form_count += 1
-                        st.success(f"Entrada registrada."); st.rerun()
-
-# --- TAB 2: HISTORIAL ---
-with t2:
-    st.subheader("Movimientos Recientes")
-    hist = []
-    try:
-        ent = supabase.table("entradas").select("*").order("fecha", desc=True).limit(30).execute().data
-        for e in ent: e['Tipo'] = "🟢 Entrada"; hist.append(e)
-        
-        sal = supabase.table("salidas").select("*").order("fecha", desc=True).limit(30).execute().data
-        for s in sal: s['Tipo'] = "🔴 Venta"; hist.append(s)
-        
-        if hist:
-            df_h = pd.DataFrame(hist).sort_values("fecha
+                costo = st.number_input("C
