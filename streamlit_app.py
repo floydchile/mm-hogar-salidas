@@ -73,6 +73,8 @@ def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
 
 # --- INTERFAZ USUARIO ---
 if 'usuario_ingresado' not in st.session_state: st.session_state.usuario_ingresado = None
+# Inicializar llaves para limpiar formularios
+if 'form_count' not in st.session_state: st.session_state.form_count = 0
 
 with st.sidebar:
     if logo: st.image(logo, width=150)
@@ -102,46 +104,47 @@ with t1:
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("📥 Entrada de Stock")
-        query_in = st.text_input("Buscar producto (SKU o Nombre):", key="in_search").upper()
-        if query_in:
-            prods = buscar_productos(query_in)
+        # Usamos una llave que cambia para limpiar el campo
+        sku_in = st.text_input("Buscar producto (SKU o Nombre):", key=f"in_search_{st.session_state.form_count}").upper()
+        if sku_in:
+            prods = buscar_productos(sku_in)
             if prods:
-                # CORRECCIÓN: Selección manual si hay varios resultados
                 p_sel = st.selectbox(
                     "Selecciona el producto exacto:", 
                     prods, 
                     format_func=lambda x: f"{x['sku']} - {x['nombre']} (Stock: {x['stock_total']})",
-                    key="sb_in"
+                    key=f"sb_in_{st.session_state.form_count}"
                 )
                 
-                cant = st.number_input("Cantidad a ingresar:", min_value=1, key="n1")
-                costo = st.number_input("Costo Contenedor (CLP):", value=int(p_sel['precio_costo_contenedor']), step=1000)
+                cant = st.number_input("Cantidad a ingresar:", min_value=1, key=f"n1_{st.session_state.form_count}")
+                costo = st.number_input("Costo Contenedor (CLP):", value=int(p_sel['precio_costo_contenedor']), step=1000, key=f"c1_{st.session_state.form_count}")
                 
                 if st.button("📥 Confirmar Entrada", type="primary", use_container_width=True):
                     ok, msg = registrar_movimiento("entrada", p_sel['sku'], cant, p_sel['und_x_embalaje'], st.session_state.usuario_ingresado, costo)
                     if ok: 
+                        st.session_state.form_count += 1 # Esto limpia los campos al cambiar la key
                         st.success(f"Entrada registrada. Costo: {formato_clp(costo)}")
                         st.balloons()
+                        st.rerun()
                     else: st.error(msg)
             else:
                 st.warning("Producto no encontrado.")
 
     with c2:
         st.subheader("🚀 Registro de Venta")
-        query_out = st.text_input("Buscar producto (SKU o Nombre):", key="out_search").upper()
-        if query_out:
-            prods_v = buscar_productos(query_out)
+        sku_out = st.text_input("Buscar producto (SKU o Nombre):", key=f"out_search_{st.session_state.form_count}").upper()
+        if sku_out:
+            prods_v = buscar_productos(sku_out)
             if prods_v:
-                # CORRECCIÓN: Selección manual para ventas
                 p_v_sel = st.selectbox(
                     "Selecciona para vender:", 
                     prods_v, 
                     format_func=lambda x: f"{x['sku']} - {x['nombre']} (Disp: {x['stock_total']})",
-                    key="sb_out"
+                    key=f"sb_out_{st.session_state.form_count}"
                 )
                 
-                cant_v = st.number_input("Cantidad a vender:", min_value=1, key="n2")
-                canal = st.selectbox("Canal:", ["Mercadolibre", "Falabella", "Walmart", "Hites", "Paris", "Web", "WhatsApp", "Retiro"])
+                cant_v = st.number_input("Cantidad a vender:", min_value=1, key=f"n2_{st.session_state.form_count}")
+                canal = st.selectbox("Canal:", ["Mercadolibre", "Falabella", "Walmart", "Hites", "Paris", "Web", "WhatsApp", "Retiro"], key=f"canal_{st.session_state.form_count}")
                 
                 if p_v_sel['stock_total'] < cant_v:
                     st.warning(f"Stock insuficiente. Disponible: {p_v_sel['stock_total']}")
@@ -149,6 +152,7 @@ with t1:
                 if st.button("🚀 Finalizar Venta", type="primary", use_container_width=True):
                     ok, msg = registrar_movimiento("salida", p_v_sel['sku'], cant_v, canal, st.session_state.usuario_ingresado)
                     if ok: 
+                        st.session_state.form_count += 1 # Limpia el formulario
                         st.success("Venta guardada exitosamente!")
                         st.rerun()
                     else: st.error(msg)
@@ -157,6 +161,7 @@ with t1:
 
 with t2:
     st.subheader("Movimientos Recientes")
+    # ... (Se mantiene lógica de historial igual)
     hist = []
     ent = supabase.table("entradas").select("*").order("fecha", desc=True).limit(50).execute().data
     for e in ent: e['Tipo'] = "🟢 Entrada"; hist.append(e)
@@ -169,20 +174,18 @@ with t2:
 
 with t3:
     st.subheader("Estado de Inventario")
+    # ... (Se mantiene lógica de stock igual con formato CLP)
     all_p = buscar_productos()
     if all_p:
         df = pd.DataFrame(all_p)
-        # Cálculos
         df['Unitario'] = df['precio_costo_contenedor'] / df['und_x_embalaje'].replace(0, 1)
         df['Inversion_Fila'] = df['Unitario'] * df['stock_total']
         
-        # Métricas con formato chileno
         m1, m2, m3 = st.columns(3)
         m1.metric("Inversión Total", formato_clp(df['Inversion_Fila'].sum()))
         m2.metric("Total Unidades", int(df['stock_total'].sum()))
         m3.metric("SKUs Activos", len(df))
         
-        # Preparar tabla para mostrar
         df_view = df.copy()
         df_view['Costo Contenedor'] = df_view['precio_costo_contenedor'].apply(formato_clp)
         df_view['Valor Unitario'] = df_view['Unitario'].apply(formato_clp)
@@ -196,7 +199,7 @@ with t3:
 with t4:
     st.subheader("Configuración de Productos")
     with st.expander("🆕 Crear Nuevo Producto"):
-        with st.form("crear"):
+        with st.form("crear", clear_on_submit=True): # clear_on_submit limpia este form automáticamente
             c1, c2, c3 = st.columns(3)
             f_sku = c1.text_input("SKU").upper().strip()
             f_nom = c2.text_input("Nombre")
