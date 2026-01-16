@@ -4,7 +4,8 @@ from datetime import datetime
 import os
 import pandas as pd
 from PIL import Image
-import requests  # <-- Añadido para la conexión con MeLi
+import requests
+import urllib.parse  # Importante para el SKU con espacios
 
 # --- CONFIGURACIÓN Y ESTILOS ---
 st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide")
@@ -27,7 +28,6 @@ except:
 # --- CONEXIÓN ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-# Variables de Mercado Libre desde Railway
 MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
 MELI_USER_ID = os.getenv("MELI_USER_ID")
 
@@ -45,24 +45,22 @@ USUARIOS_VALIDOS = ["pau", "dany", "miguel"]
 # --- FUNCIONES DE INTEGRACIÓN MERCADO LIBRE ---
 
 def sincronizar_stock_meli(sku, nuevo_stock):
-    """Busca el producto por SKU en MeLi y actualiza su stock físico"""
     if not MELI_TOKEN or not MELI_USER_ID:
         return False
     try:
-        # 1. Buscar el ITEM_ID usando el SKU (el seller_custom_field que configuramos)
-        search_url = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?sku={sku}"
+        sku_encoded = urllib.parse.quote(sku)
+        search_url = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?sku={sku_encoded}"
         headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
         search_res = requests.get(search_url, headers=headers).json()
         
         if search_res.get('results'):
             item_id = search_res['results'][0]
-            # 2. Actualizar el stock físicamente en MeLi
             update_url = f"https://api.mercadolibre.com/items/{item_id}"
             payload = {"available_quantity": int(nuevo_stock)}
             response = requests.put(update_url, json=payload, headers=headers)
             return response.status_code == 200
-    except Exception as e:
-        print(f"Error MeLi: {e}")
+    except:
+        pass
     return False
 
 # --- FUNCIONES AUXILIARES ---
@@ -79,30 +77,23 @@ def buscar_productos(query: str = ""):
         st.error(f"Error al buscar: {e}")
         return []
 
-# --- LÓGICA DE NEGOCIO MODIFICADA ---
+# --- LÓGICA DE NEGOCIO ---
 def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
     try:
         if tipo == "entrada":
             if precio is not None:
                 supabase.table("productos").update({"precio_costo_contenedor": float(precio)}).eq("sku", sku).execute()
-            supabase.rpc("registrar_entrada", {
-                "p_sku": sku, "p_cantidad": int(cantidad), 
-                "p_und_x_embalaje": extra_val, "p_usuario": usuario
-            }).execute()
+            supabase.rpc("registrar_entrada", {"p_sku": sku, "p_cantidad": int(cantidad), "p_und_x_embalaje": extra_val, "p_usuario": usuario}).execute()
         else:
-            res = supabase.rpc("registrar_salida", {
-                "p_sku": sku, "p_cantidad": int(cantidad), 
-                "p_canal": extra_val, "p_usuario": usuario
-            }).execute()
+            res = supabase.rpc("registrar_salida", {"p_sku": sku, "p_cantidad": int(cantidad), "p_canal": extra_val, "p_usuario": usuario}).execute()
             if "ERROR" in res.data: return False, res.data
         
-        # --- SINCRONIZACIÓN AUTOMÁTICA CON MERCADO LIBRE ---
-        # Después de cualquier movimiento exitoso, enviamos el stock total real a MeLi
+        # Sincronización automática
         prod_data = supabase.table("productos").select("stock_total").eq("sku", sku).single().execute()
         if prod_data.data:
             sincronizar_stock_meli(sku, prod_data.data['stock_total'])
             
-        return True, "Operación exitosa y MeLi sincronizado"
+        return True, "Operación exitosa"
     except Exception as e:
         return False, str(e)
 
@@ -151,7 +142,7 @@ with t1:
                     ok, msg = registrar_movimiento("salida", p_v_sel['sku'], cant_v, canal, st.session_state.usuario_ingresado)
                     if ok: 
                         st.session_state.form_count += 1
-                        st.success("Venta guardada y sincronizada!"); st.rerun()
+                        st.success("Venta guardada!"); st.rerun()
 
     with col_entrada:
         st.subheader("📥 Entrada de Stock")
@@ -166,7 +157,7 @@ with t1:
                     ok, msg = registrar_movimiento("entrada", p_sel['sku'], cant, p_sel['und_x_embalaje'], st.session_state.usuario_ingresado, costo)
                     if ok: 
                         st.session_state.form_count += 1
-                        st.success(f"Entrada registrada y MeLi actualizado."); st.rerun()
+                        st.success(f"Entrada registrada."); st.rerun()
 
 # --- TAB 2: HISTORIAL ---
 with t2:
@@ -201,7 +192,6 @@ with t3:
 with t4:
     st.subheader("Configuración de Productos")
     c_edit, c_new = st.columns(2)
-    
     with c_edit:
         st.markdown("### ✏️ Editar Producto")
         edit_query = st.text_input("Buscar para editar:", key=f"edit_search_box_{st.session_state.edit_reset_counter}").upper()
@@ -211,27 +201,18 @@ with t4:
                 p_to_edit = st.selectbox("Seleccione producto:", prods_edit, format_func=lambda x: f"{x['sku']} - {x['nombre']}", key=f"edit_select_{st.session_state.edit_reset_counter}")
                 with st.form(key=f"form_edit_dyn_{st.session_state.edit_reset_counter}"):
                     sku_fijo = p_to_edit['sku']
-                    st.text_input("SKU (Identificador único):", value=sku_fijo, disabled=True)
+                    st.text_input("SKU:", value=sku_fijo, disabled=True)
                     new_name = st.text_input("Nombre:", value=p_to_edit['nombre'])
                     new_und = st.number_input("Unidades x Embalaje:", min_value=1, value=int(p_to_edit['und_x_embalaje']))
                     new_costo = st.number_input("Costo Contenedor (CLP):", min_value=0, value=int(p_to_edit['precio_costo_contenedor']))
-                    
                     if st.form_submit_button("Actualizar Producto", type="primary", use_container_width=True):
                         try:
-                            supabase.table("productos").update({
-                                "nombre": new_name, "und_x_embalaje": new_und, "precio_costo_contenedor": new_costo
-                            }).eq("sku", sku_fijo).execute()
-                            
-                            supabase.table("entradas").insert({
-                                "sku": sku_fijo, "cantidad": 0, "usuario": f"{st.session_state.usuario_ingresado} (EDIT)"
-                            }).execute()
-                            
+                            supabase.table("productos").update({"nombre": new_name, "und_x_embalaje": new_und, "precio_costo_contenedor": new_costo}).eq("sku", sku_fijo).execute()
+                            supabase.table("entradas").insert({"sku": sku_fijo, "cantidad": 0, "usuario": f"{st.session_state.usuario_ingresado} (EDIT)"}).execute()
                             st.session_state.edit_reset_counter += 1
                             st.success(f"✅ {sku_fijo} actualizado.")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"Error al actualizar: {e}")
-
+                        except Exception as e: st.error(f"Error: {e}")
     with c_new:
         st.markdown("### 🆕 Nuevo Producto")
         with st.form("crear_nuevo", clear_on_submit=True):
@@ -239,14 +220,9 @@ with t4:
             f_nom = st.text_input("Nombre:")
             f_und = st.number_input("Unidades x Embalaje:", min_value=1, value=1)
             f_costo = st.number_input("Costo Contenedor Inicial (CLP):", min_value=0, value=0)
-            
             if st.form_submit_button("Crear Producto", use_container_width=True):
                 if f_sku and f_nom:
                     try:
-                        supabase.table("productos").insert({
-                            "sku": f_sku, "nombre": f_nom, "und_x_embalaje": f_und, 
-                            "stock_total": 0, "precio_costo_contenedor": f_costo
-                        }).execute()
-                        st.success("✅ Creado con éxito")
-                        st.rerun()
+                        supabase.table("productos").insert({"sku": f_sku, "nombre": f_nom, "und_x_embalaje": f_und, "stock_total": 0, "precio_costo_contenedor": f_costo}).execute()
+                        st.success("✅ Creado con éxito"); st.rerun()
                     except: st.error("El SKU ya existe.")
