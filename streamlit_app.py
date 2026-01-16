@@ -1,67 +1,58 @@
 import streamlit as st
-from supabase import create_client, Client
 import os
 import requests
-import urllib.parse
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="M&M Hogar - Ajuste Fino", layout="wide")
+st.set_page_config(page_title="Inspector Directo", layout="wide")
+st.warning("⚠️ **MODO INSPECCIÓN: REVISANDO PUBLICACIÓN ESPECÍFICA**")
 
-# MENSAJE PARA EL EQUIPO (HEADER)
-st.warning("⚠️ **PAU - DANY ESTOY HACIENDO PRUEBAS, VUELVAN MAS RATO**")
-
-# Conexión
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
-MELI_USER_ID = os.getenv("MELI_USER_ID")
+ITEM_ID_OBJETIVO = "MLC2884836674" # La que tú dices que es la buena
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-def buscar_todas_las_publicaciones(sku_buscado):
+def inspeccionar_item_especifico(item_id):
     headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
-    sku_clean = str(sku_buscado).strip()
-    
-    # Buscamos todas las publicaciones que tengan este SKU
-    url = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?seller_custom_field={urllib.parse.quote(sku_clean)}"
-    r = requests.get(url, headers=headers).json()
-    ids = r.get('results', [])
-    
-    detalles = []
-    for item_id in ids:
-        item = requests.get(f"https://api.mercadolibre.com/items/{item_id}", headers=headers).json()
-        detalles.append({
-            "id": item_id,
-            "titulo": item.get('title'),
-            "status": item.get('status'),
-            "permalink": item.get('permalink')
-        })
-    return detalles
-
-st.title("🔍 Investigador de Publicaciones MeLi")
-
-try:
-    prods = supabase.table("productos").select("*").order("sku").execute().data
-    if prods:
-        p_sel = st.selectbox("Selecciona el producto para revisar:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
+    try:
+        # Consultamos directamente por el ID, sin buscar por SKU
+        res = requests.get(f"https://api.mercadolibre.com/items/{item_id}", headers=headers).json()
         
-        if st.button("🔎 ¿A qué publicaciones apunta este SKU en MeLi?"):
-            with st.spinner("Consultando a Mercado Libre..."):
-                resultados = buscar_todas_las_publicaciones(p_sel['sku'])
-            
-            if resultados:
-                st.write(f"### Se encontraron {len(resultados)} publicaciones para el SKU: `{p_sel['sku']}`")
-                for res in resultados:
-                    with st.expander(f"Publicación: {res['id']} ({res['status']})"):
-                        st.write(f"**Título:** {res['titulo']}")
-                        st.write(f"**Link:** [Ver en MeLi]({res['permalink']})")
-                        st.write(f"**Estado:** {res['status']}")
-                        if res['id'] == "MLC2884836674":
-                            st.success("⭐ ESTA ES LA CORRECTA QUE MENCIONASTE")
-                        elif res['id'] == "MLC522473073":
-                            st.error("🚫 ESTA ES LA QUE SE SINCRONIZÓ POR ERROR")
-            else:
-                st.error("No se encontró ninguna publicación con ese SKU.")
+        datos = {
+            "ID": res.get('id'),
+            "Título": res.get('title'),
+            "Estado": res.get('status'),
+            "SKU_Principal": res.get('seller_custom_field'),
+            "Tiene_Variantes": "Sí" if res.get('variations') else "No",
+            "Variantes": []
+        }
+        
+        if res.get('variations'):
+            for v in res['variations']:
+                datos["Variantes"].append({
+                    "ID_Variante": v.get('id'),
+                    "SKU_Variante": v.get('seller_custom_field'),
+                    "Stock_Actual": v.get('available_quantity')
+                })
+        return datos
+    except Exception as e:
+        return {"error": str(e)}
 
-except Exception as e:
-    st.error(f"Error: {e}")
+st.title("🕵️ ¿Qué ve Mercado Libre en la publicación correcta?")
+
+if st.button("🔍 Analizar MLC2884836674"):
+    resultado = inspeccionar_item_especifico(ITEM_ID_OBJETIVO)
+    
+    if "error" in resultado:
+        st.error(f"No se pudo conectar: {resultado['error']}")
+    else:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("### Datos Generales")
+            st.json(resultado)
+        with col2:
+            st.info("### Comparación Crucial")
+            sku_en_meli = resultado["SKU_Principal"]
+            st.write(f"Tu Base de Datos busca: `EBSP XXXG42`")
+            st.write(f"Mercado Libre tiene: `{sku_en_meli}`")
+            
+            if not sku_en_meli and not resultado["Variantes"]:
+                st.error("❗ ESTA PUBLICACIÓN NO TIENE SKU ASIGNADO EN MELI")
+            elif resultado["Variantes"]:
+                st.warning("⚠️ ESTA PUBLICACIÓN TIENE VARIANTES. El SKU debe estar dentro de la variante, no en el principal.")
