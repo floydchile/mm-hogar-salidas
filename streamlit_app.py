@@ -2,57 +2,44 @@ import streamlit as st
 import os
 import requests
 
-st.set_page_config(page_title="Inspector Directo", layout="wide")
-st.warning("⚠️ **MODO INSPECCIÓN: REVISANDO PUBLICACIÓN ESPECÍFICA**")
+st.set_page_config(page_title="Analizador de Atributos", layout="wide")
+st.warning("⚠️ **BUSCANDO EL CAMPO SKU OCULTO**")
 
 MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
-ITEM_ID_OBJETIVO = "MLC2884836674" # La que tú dices que es la buena
+ITEM_ID = "MLC2884836674"
 
-def inspeccionar_item_especifico(item_id):
+def obtener_json_crudo(item_id):
     headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
-    try:
-        # Consultamos directamente por el ID, sin buscar por SKU
-        res = requests.get(f"https://api.mercadolibre.com/items/{item_id}", headers=headers).json()
-        
-        datos = {
-            "ID": res.get('id'),
-            "Título": res.get('title'),
-            "Estado": res.get('status'),
-            "SKU_Principal": res.get('seller_custom_field'),
-            "Tiene_Variantes": "Sí" if res.get('variations') else "No",
-            "Variantes": []
-        }
-        
-        if res.get('variations'):
-            for v in res['variations']:
-                datos["Variantes"].append({
-                    "ID_Variante": v.get('id'),
-                    "SKU_Variante": v.get('seller_custom_field'),
-                    "Stock_Actual": v.get('available_quantity')
-                })
-        return datos
-    except Exception as e:
-        return {"error": str(e)}
+    url = f"https://api.mercadolibre.com/items/{item_id}"
+    res = requests.get(url, headers=headers).json()
+    return res
 
-st.title("🕵️ ¿Qué ve Mercado Libre en la publicación correcta?")
+st.title("🕵️ Buscador de Atributos MeLi")
 
-if st.button("🔍 Analizar MLC2884836674"):
-    resultado = inspeccionar_item_especifico(ITEM_ID_OBJETIVO)
+if st.button(f"🔍 Analizar {ITEM_ID} a fondo"):
+    raw_data = obtener_json_crudo(ITEM_ID)
     
-    if "error" in resultado:
-        st.error(f"No se pudo conectar: {resultado['error']}")
+    if "id" in raw_data:
+        st.success("¡Datos obtenidos!")
+        
+        # Buscador manual en el JSON
+        st.write("### 1. Búsqueda Directa del texto 'EBSP XXXG42'")
+        # Convertimos todo a string para buscar
+        raw_str = str(raw_data)
+        if "EBSP XXXG42" in raw_str:
+            st.balloons()
+            st.info("🎯 ¡El texto existe en alguna parte del JSON! Vamos a ver dónde:")
+        else:
+            st.error("❌ El texto 'EBSP XXXG42' NO existe en la respuesta de la API. Está en la web, pero no en la API.")
+
+        # Mostramos los atributos para ver si está ahí
+        st.write("### 2. Revisando la 'Ficha Técnica' (Attributes)")
+        atributos = raw_data.get('attributes', [])
+        for attr in atributos:
+            if attr.get('value_name') == "EBSP XXXG42" or attr.get('id') == "SELLER_SKU":
+                st.write(f"✅ **Encontrado en atributo:** ID: `{attr.get('id')}` | Valor: `{attr.get('value_name')}`")
+
+        st.write("### 3. JSON Completo (Para inspección visual)")
+        st.json(raw_data)
     else:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write("### Datos Generales")
-            st.json(resultado)
-        with col2:
-            st.info("### Comparación Crucial")
-            sku_en_meli = resultado["SKU_Principal"]
-            st.write(f"Tu Base de Datos busca: `EBSP XXXG42`")
-            st.write(f"Mercado Libre tiene: `{sku_en_meli}`")
-            
-            if not sku_en_meli and not resultado["Variantes"]:
-                st.error("❗ ESTA PUBLICACIÓN NO TIENE SKU ASIGNADO EN MELI")
-            elif resultado["Variantes"]:
-                st.warning("⚠️ ESTA PUBLICACIÓN TIENE VARIANTES. El SKU debe estar dentro de la variante, no en el principal.")
+        st.error("No se pudo obtener el ítem. Revisa el Token.")
