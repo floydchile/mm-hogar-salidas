@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 import pandas as pd
 from PIL import Image
-import re
+import requests  # <-- Añadido para la conexión con MeLi
 
 # --- CONFIGURACIÓN Y ESTILOS ---
 st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide")
@@ -13,7 +13,6 @@ st.markdown("""<style>
     .block-container {padding-top: 1rem; padding-bottom: 0rem;}
     .stMetric {background-color: #f8f9fa; border-radius: 10px; padding: 10px; border: 1px solid #eee;}
     [data-testid="stMetricValue"] {font-size: 1.8rem;}
-    /* Quitar botones +/- de los inputs numéricos */
     input[type=number]::-webkit-inner-spin-button, 
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; }
@@ -28,6 +27,9 @@ except:
 # --- CONEXIÓN ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Variables de Mercado Libre desde Railway
+MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
+MELI_USER_ID = os.getenv("MELI_USER_ID")
 
 if not SUPABASE_KEY or not SUPABASE_URL:
     st.error("❌ Error: Faltan las credenciales de Supabase en Railway.")
@@ -39,6 +41,29 @@ def init_supabase():
 
 supabase: Client = init_supabase()
 USUARIOS_VALIDOS = ["pau", "dany", "miguel"]
+
+# --- FUNCIONES DE INTEGRACIÓN MERCADO LIBRE ---
+
+def sincronizar_stock_meli(sku, nuevo_stock):
+    """Busca el producto por SKU en MeLi y actualiza su stock físico"""
+    if not MELI_TOKEN or not MELI_USER_ID:
+        return False
+    try:
+        # 1. Buscar el ITEM_ID usando el SKU (el seller_custom_field que configuramos)
+        search_url = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?sku={sku}"
+        headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
+        search_res = requests.get(search_url, headers=headers).json()
+        
+        if search_res.get('results'):
+            item_id = search_res['results'][0]
+            # 2. Actualizar el stock físicamente en MeLi
+            update_url = f"https://api.mercadolibre.com/items/{item_id}"
+            payload = {"available_quantity": int(nuevo_stock)}
+            response = requests.put(update_url, json=payload, headers=headers)
+            return response.status_code == 200
+    except Exception as e:
+        print(f"Error MeLi: {e}")
+    return False
 
 # --- FUNCIONES AUXILIARES ---
 def formato_clp(valor):
@@ -54,7 +79,7 @@ def buscar_productos(query: str = ""):
         st.error(f"Error al buscar: {e}")
         return []
 
-# --- LÓGICA DE NEGOCIO ---
+# --- LÓGICA DE NEGOCIO MODIFICADA ---
 def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
     try:
         if tipo == "entrada":
@@ -70,14 +95,20 @@ def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
                 "p_canal": extra_val, "p_usuario": usuario
             }).execute()
             if "ERROR" in res.data: return False, res.data
-        return True, "Operación exitosa"
+        
+        # --- SINCRONIZACIÓN AUTOMÁTICA CON MERCADO LIBRE ---
+        # Después de cualquier movimiento exitoso, enviamos el stock total real a MeLi
+        prod_data = supabase.table("productos").select("stock_total").eq("sku", sku).single().execute()
+        if prod_data.data:
+            sincronizar_stock_meli(sku, prod_data.data['stock_total'])
+            
+        return True, "Operación exitosa y MeLi sincronizado"
     except Exception as e:
         return False, str(e)
 
 # --- INTERFAZ USUARIO ---
 if 'usuario_ingresado' not in st.session_state: st.session_state.usuario_ingresado = None
 if 'form_count' not in st.session_state: st.session_state.form_count = 0
-# NUEVO: Contador para resetear el formulario de edición
 if 'edit_reset_counter' not in st.session_state: st.session_state.edit_reset_counter = 0
 
 with st.sidebar:
@@ -120,7 +151,7 @@ with t1:
                     ok, msg = registrar_movimiento("salida", p_v_sel['sku'], cant_v, canal, st.session_state.usuario_ingresado)
                     if ok: 
                         st.session_state.form_count += 1
-                        st.success("Venta guardada!"); st.rerun()
+                        st.success("Venta guardada y sincronizada!"); st.rerun()
 
     with col_entrada:
         st.subheader("📥 Entrada de Stock")
@@ -135,7 +166,7 @@ with t1:
                     ok, msg = registrar_movimiento("entrada", p_sel['sku'], cant, p_sel['und_x_embalaje'], st.session_state.usuario_ingresado, costo)
                     if ok: 
                         st.session_state.form_count += 1
-                        st.success(f"Entrada registrada."); st.rerun()
+                        st.success(f"Entrada registrada y MeLi actualizado."); st.rerun()
 
 # --- TAB 2: HISTORIAL ---
 with t2:
@@ -173,44 +204,30 @@ with t4:
     
     with c_edit:
         st.markdown("### ✏️ Editar Producto")
-        # El buscador ahora tiene una KEY dinámica ligada a edit_reset_counter
         edit_query = st.text_input("Buscar para editar:", key=f"edit_search_box_{st.session_state.edit_reset_counter}").upper()
         if edit_query:
             prods_edit = buscar_productos(edit_query)
             if prods_edit:
-                # El selectbox también necesita llave dinámica
                 p_to_edit = st.selectbox("Seleccione producto:", prods_edit, format_func=lambda x: f"{x['sku']} - {x['nombre']}", key=f"edit_select_{st.session_state.edit_reset_counter}")
-                
-                # El formulario entero tiene una llave que cambia tras el éxito
                 with st.form(key=f"form_edit_dyn_{st.session_state.edit_reset_counter}"):
                     sku_fijo = p_to_edit['sku']
                     st.text_input("SKU (Identificador único):", value=sku_fijo, disabled=True)
-                    
                     new_name = st.text_input("Nombre:", value=p_to_edit['nombre'])
                     new_und = st.number_input("Unidades x Embalaje:", min_value=1, value=int(p_to_edit['und_x_embalaje']))
                     new_costo = st.number_input("Costo Contenedor (CLP):", min_value=0, value=int(p_to_edit['precio_costo_contenedor']))
                     
                     if st.form_submit_button("Actualizar Producto", type="primary", use_container_width=True):
                         try:
-                            # 1. Actualizar Datos del Producto
                             supabase.table("productos").update({
-                                "nombre": new_name,
-                                "und_x_embalaje": new_und,
-                                "precio_costo_contenedor": new_costo
+                                "nombre": new_name, "und_x_embalaje": new_und, "precio_costo_contenedor": new_costo
                             }).eq("sku", sku_fijo).execute()
                             
-                            # 2. Registrar en Historial (Cantidad 0 para no alterar stock)
-                            # Se añade un sufijo (EDIT) al usuario para que se entienda en la pestaña historial
                             supabase.table("entradas").insert({
-                                "sku": sku_fijo,
-                                "cantidad": 0,
-                                "usuario": f"{st.session_state.usuario_ingresado} (EDIT)"
+                                "sku": sku_fijo, "cantidad": 0, "usuario": f"{st.session_state.usuario_ingresado} (EDIT)"
                             }).execute()
                             
-                            # 3. Éxito y Limpieza
                             st.session_state.edit_reset_counter += 1
-                            st.success(f"✅ {sku_fijo} actualizado y registrado en historial.")
-                            # Pequeña pausa visual antes de recargar
+                            st.success(f"✅ {sku_fijo} actualizado.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error al actualizar: {e}")
