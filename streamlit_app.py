@@ -7,199 +7,107 @@ from PIL import Image
 import requests
 import urllib.parse
 
-# --- CONFIGURACIÓN Y ESTILOS ---
-st.set_page_config(page_title="M&M Hogar", page_icon="📦", layout="wide")
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="M&M Hogar - Sincro", page_icon="📦", layout="wide")
 
-st.markdown("""<style>
-    .block-container {padding-top: 1rem; padding-bottom: 0rem;}
-    .stMetric {background-color: #f8f9fa; border-radius: 10px; padding: 10px; border: 1px solid #eee;}
-    [data-testid="stMetricValue"] {font-size: 1.8rem;}
-    input[type=number]::-webkit-inner-spin-button, 
-    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-    input[type=number] { -moz-appearance: textfield; }
-</style>""", unsafe_allow_html=True)
-
-# --- CONEXIÓN ---
+# Conexión con variables de Railway
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
 MELI_USER_ID = os.getenv("MELI_USER_ID")
 
-if not SUPABASE_KEY or not SUPABASE_URL:
-    st.error("❌ Error: Faltan las credenciales de Supabase en Railway.")
-    st.stop()
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-@st.cache_resource
-def init_supabase():
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
-
-supabase: Client = init_supabase()
-USUARIOS_VALIDOS = ["pau", "dany", "miguel"]
-
-# --- LÓGICA DE WEBHOOK (MERCADO LIBRE -> MYM) ---
-q_params = st.query_params
-if "topic" in q_params and "resource" in q_params:
-    topic = q_params.get("topic")
-    resource = q_params.get("resource")
-    if topic == "orders_v2" and MELI_TOKEN:
-        try:
-            headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
-            order_res = requests.get(f"https://api.mercadolibre.com{resource}", headers=headers).json()
-            for item in order_res.get('order_items', []):
-                sku_meli = item.get('item', {}).get('seller_custom_field')
-                cant = item.get('quantity')
-                if sku_meli:
-                    supabase.rpc("registrar_salida", {
-                        "p_sku": sku_meli.strip(), 
-                        "p_cantidad": int(cant), 
-                        "p_canal": "Mercadolibre", 
-                        "p_usuario": "BOT_MELI"
-                    }).execute()
-        except:
-            pass
-    st.stop()
-
-# --- FUNCIONES DE APOYO Y SINCRONIZACIÓN ---
-def formato_clp(valor):
-    return f"${int(valor):,}".replace(",", ".")
-
-def buscar_productos(query: str = ""):
+# --- FUNCIÓN MAESTRA DE SINCRONIZACIÓN ---
+def sincronizar_meli(sku, cantidad):
+    """ Esta función es la que hace el trabajo sucio con la API de MeLi """
+    if not MELI_TOKEN:
+        return "❌ Error: No hay Token de MeLi configurado."
+    
+    headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
+    sku_limpio = str(sku).strip()
+    
     try:
-        db_query = supabase.table("productos").select("*")
-        if query:
-            db_query = db_query.or_(f"sku.ilike.%{query}%,nombre.ilike.%{query}%")
-        return db_query.order("sku").execute().data
-    except:
-        return []
-
-def sincronizar_stock_meli(sku, nuevo_stock):
-    if not MELI_TOKEN or not MELI_USER_ID: return False
-    try:
-        sku_clean = str(sku).strip()
-        sku_encoded = urllib.parse.quote(sku_clean)
-        headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
-        search_url = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?sku={sku_encoded}"
-        search_res = requests.get(search_url, headers=headers).json()
-        if search_res.get('results'):
-            item_id = search_res['results'][0]
-            update_url = f"https://api.mercadolibre.com/items/{item_id}"
-            requests.put(update_url, json={"available_quantity": int(nuevo_stock)}, headers=headers)
-            return True
-    except: pass
-    return False
-
-def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
-    try:
-        if tipo == "entrada":
-            if precio is not None:
-                supabase.table("productos").update({"precio_costo_contenedor": float(precio)}).eq("sku", sku).execute()
-            supabase.rpc("registrar_entrada", {"p_sku": sku, "p_cantidad": int(cantidad), "p_und_x_embalaje": extra_val, "p_usuario": usuario}).execute()
-        else:
-            res = supabase.rpc("registrar_salida", {"p_sku": sku, "p_cantidad": int(cantidad), "p_canal": extra_val, "p_usuario": usuario}).execute()
-            if "ERROR" in res.data: return False, res.data
+        # 1. Buscar el producto por SKU
+        url_busqueda = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?sku={urllib.parse.quote(sku_limpio)}"
+        r_search = requests.get(url_busqueda, headers=headers).json()
         
-        # Sincronización automática con MeLi
-        p_data = supabase.table("productos").select("stock_total").eq("sku", sku).single().execute()
-        if p_data.data:
-            sincronizar_stock_meli(sku, p_data.data['stock_total'])
-        return True, "Ok"
-    except Exception as e: return False, str(e)
+        if not r_search.get('results'):
+            return f"❓ SKU '{sku_limpio}' no encontrado en tus publicaciones de MeLi."
+        
+        item_id = r_search['results'][0]
+        
+        # 2. Actualizar el stock
+        url_upd = f"https://api.mercadolibre.com/items/{item_id}"
+        data_upd = {"available_quantity": int(cantidad)}
+        r_upd = requests.put(url_upd, json=data_upd, headers=headers)
+        
+        if r_upd.status_code == 200:
+            return f"✅ MeLi Sincronizado: {sku_limpio} ahora tiene {cantidad} unidades."
+        else:
+            return f"❌ Error API MeLi: {r_upd.json().get('message')}"
+            
+    except Exception as e:
+        return f"❌ Error de conexión: {str(e)}"
 
-# --- INTERFAZ (Tu diseño original estable) ---
-try:
-    logo = Image.open("assets/mym_hogar.png")
-except:
-    logo = None
-
-if 'usuario_ingresado' not in st.session_state: st.session_state.usuario_ingresado = None
-if 'form_count' not in st.session_state: st.session_state.form_count = 0
-if 'edit_reset_counter' not in st.session_state: st.session_state.edit_reset_counter = 0
-
-with st.sidebar:
-    if logo: st.image(logo, width=150)
-    if st.session_state.usuario_ingresado:
-        st.success(f"Sesión: {st.session_state.usuario_ingresado.upper()}")
-        if st.button("🚪 Cerrar Sesión", use_container_width=True):
-            st.session_state.usuario_ingresado = None
-            st.rerun()
-    else:
-        user = st.text_input("Usuario:").lower().strip()
-        if st.button("✅ Ingresar", use_container_width=True, type="primary"):
-            if user in USUARIOS_VALIDOS:
-                st.session_state.usuario_ingresado = user
-                st.rerun()
-
-if not st.session_state.usuario_ingresado:
-    st.title("📦 M&M Hogar")
-    st.info("👋 Por favor ingresa tu usuario en el menú lateral.")
+# --- LÓGICA DE WEBHOOK (RECIBIR VENTAS DE MELI) ---
+# Si MeLi nos avisa de una venta, este bloque la procesa antes de mostrar la web
+params = st.query_params
+if "topic" in params and "resource" in params:
+    if params.get("topic") == "orders_v2":
+        try:
+            res_path = params.get("resource")
+            headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
+            order = requests.get(f"https://api.mercadolibre.com{res_path}", headers=headers).json()
+            
+            for item in order.get('order_items', []):
+                sku_vta = item.get('item', {}).get('seller_custom_field')
+                cant_vta = item.get('quantity')
+                if sku_vta:
+                    supabase.rpc("registrar_salida", {
+                        "p_sku": sku_vta.strip(), "p_cantidad": int(cant_vta),
+                        "p_canal": "Mercadolibre", "p_usuario": "SISTEMA_MELI"
+                    }).execute()
+        except: pass
     st.stop()
 
-st.title("📦 M&M Hogar - Gestión")
-t1, t2, t3, t4 = st.tabs(["🛒 Movimientos", "📋 Historial", "📈 Stock e Inventario", "⚙️ Configuración"])
+# --- INTERFAZ ORIGINAL (RESUMIDA PARA PRUEBAS) ---
+st.title("📦 MyM + Mercado Libre")
 
-with t1:
-    col_v, col_e = st.columns(2)
-    with col_v:
-        st.subheader("🚀 Registro de Venta")
-        sku_out = st.text_input("Buscar para Venta:", key=f"out_search_{st.session_state.form_count}").upper()
-        if sku_out:
-            prods_v = buscar_productos(sku_out)
-            if prods_v:
-                p_v_sel = st.selectbox("Seleccionar:", prods_v, format_func=lambda x: f"{x['sku']} - {x['nombre']} (Disp: {x['stock_total']})", key=f"sb_out_{st.session_state.form_count}")
-                cant_v = st.number_input("Cantidad:", min_value=1, key=f"n2_{st.session_state.form_count}")
-                canal = st.selectbox("Canal:", ["Mercadolibre", "WhatsApp", "Web", "Retiro"], key=f"canal_{st.session_state.form_count}")
-                if st.button("🚀 Finalizar Venta", type="primary", use_container_width=True):
-                    ok, msg = registrar_movimiento("salida", p_v_sel['sku'], cant_v, canal, st.session_state.usuario_ingresado)
-                    if ok: st.session_state.form_count += 1; st.success("Venta guardada!"); st.rerun()
+# Pestañas
+tab_mov, tab_stock = st.tabs(["🛒 Movimientos", "📈 Stock"])
 
-    with col_e:
-        st.subheader("📥 Entrada de Stock")
-        sku_in = st.text_input("Buscar para Entrada:", key=f"in_search_{st.session_state.form_count}").upper()
-        if sku_in:
-            prods = buscar_productos(sku_in)
-            if prods:
-                p_sel = st.selectbox("Seleccionar:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']}", key=f"sb_in_{st.session_state.form_count}")
-                cant = st.number_input("Cantidad:", min_value=1, key=f"n1_{st.session_state.form_count}")
-                costo = st.number_input("Costo Contenedor (CLP):", value=int(p_sel['precio_costo_contenedor']), key=f"c1_{st.session_state.form_count}")
-                if st.button("📥 Confirmar Entrada", type="primary", use_container_width=True):
-                    ok, msg = registrar_movimiento("entrada", p_sel['sku'], cant, p_sel['und_x_embalaje'], st.session_state.usuario_ingresado, costo)
-                    if ok: st.session_state.form_count += 1; st.success("Entrada registrada."); st.rerun()
+with tab_mov:
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Registrar Venta Manual")
+        # Selector de producto (traído de Supabase)
+        prods = supabase.table("productos").select("*").execute().data
+        if prods:
+            p_sel = st.selectbox("Producto:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
+            cant = st.number_input("Cantidad vendida:", min_value=1, value=1)
+            
+            if st.button("Finalizar Venta y Sincronizar", type="primary"):
+                # 1. Registrar en Supabase
+                res = supabase.rpc("registrar_salida", {
+                    "p_sku": p_sel['sku'], "p_cantidad": cant,
+                    "p_canal": "Venta Manual", "p_usuario": "Admin"
+                }).execute()
+                
+                # 2. Obtener nuevo stock total
+                nuevo_stock = supabase.table("productos").select("stock_total").eq("sku", p_sel['sku']).single().execute().data['stock_total']
+                
+                # 3. SINCRONIZAR CON MELI
+                with st.spinner("Sincronizando con Mercado Libre..."):
+                    resultado = sincronizar_meli(p_sel['sku'], nuevo_stock)
+                
+                if "✅" in resultado:
+                    st.success(resultado)
+                else:
+                    st.warning(resultado)
 
-with t2:
-    st.subheader("Movimientos Recientes")
-    hist = []
-    ent = supabase.table("entradas").select("*").order("fecha", desc=True).limit(30).execute().data
-    for e in ent: e['Tipo'] = "🟢 Entrada"; hist.append(e)
-    sal = supabase.table("salidas").select("*").order("fecha", desc=True).limit(30).execute().data
-    for s in sal: s['Tipo'] = "🔴 Venta"; hist.append(s)
-    if hist:
-        df_h = pd.DataFrame(hist).sort_values("fecha", ascending=False)
-        st.dataframe(df_h[["fecha", "Tipo", "sku", "cantidad", "usuario"]], use_container_width=True, hide_index=True)
-
-with t3:
-    st.subheader("Estado de Inventario")
-    all_p = buscar_productos()
-    if all_p:
-        df = pd.DataFrame(all_p)
-        df['Unitario'] = df['precio_costo_contenedor'] / df['und_x_embalaje'].replace(0, 1)
-        df['Inversion_Fila'] = df['Unitario'] * df['stock_total']
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Inversión Total", formato_clp(df['Inversion_Fila'].sum()))
-        m2.metric("Total Unidades", int(df['stock_total'].sum()))
-        m3.metric("SKUs Activos", len(df))
-        st.dataframe(df[["sku", "nombre", "stock_total", "und_x_embalaje"]], use_container_width=True, hide_index=True)
-
-with t4:
-    st.subheader("Configuración de Productos")
-    edit_query = st.text_input("Buscar para editar:", key=f"edit_q_{st.session_state.edit_reset_counter}").upper()
-    if edit_query:
-        prods_edit = buscar_productos(edit_query)
-        if prods_edit:
-            p_to_edit = st.selectbox("Seleccione:", prods_edit, format_func=lambda x: f"{x['sku']} - {x['nombre']}", key=f"edit_s_{st.session_state.edit_reset_counter}")
-            with st.form(key=f"f_edit_{st.session_state.edit_reset_counter}"):
-                new_name = st.text_input("Nombre:", value=p_to_edit['nombre'])
-                new_und = st.number_input("Unidades x Embalaje:", value=int(p_to_edit['und_x_embalaje']))
-                if st.form_submit_button("Actualizar Producto", type="primary", use_container_width=True):
-                    supabase.table("productos").update({"nombre": new_name, "und_x_embalaje": new_und}).eq("sku", p_to_edit['sku']).execute()
-                    st.session_state.edit_reset_counter += 1
-                    st.success("Actualizado!"); st.rerun()
+with tab_stock:
+    # Mostrar tabla de stock actual
+    st.subheader("Estado actual en Base de Datos")
+    st.dataframe(pd.DataFrame(prods)[["sku", "nombre", "stock_total"]], use_container_width=True)
