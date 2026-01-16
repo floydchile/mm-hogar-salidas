@@ -5,9 +5,13 @@ import pandas as pd
 import requests
 import urllib.parse
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="M&M Hogar - Debug", layout="wide")
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="M&M Hogar - MODO PRUEBA", layout="wide")
 
+# --- MENSAJE PARA EL EQUIPO (HEADER) ---
+st.warning("⚠️ **PAU - DANY ESTOY HACIENDO PRUEBAS, VUELVAN MAS RATO**")
+
+# Conexión
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
@@ -15,66 +19,54 @@ MELI_USER_ID = os.getenv("MELI_USER_ID")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def buscar_en_meli_debug(sku_buscado):
-    """Busca el producto y devuelve detalles técnicos si falla"""
+def investigar_item_meli(item_id):
+    """Obtiene los detalles reales de una publicación para ver su SKU interno"""
     headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
-    sku_clean = str(sku_buscado).strip()
-    
-    # 1. Intentar búsqueda por seller_custom_field (SKU)
-    url = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?seller_custom_field={urllib.parse.quote(sku_clean)}"
-    r = requests.get(url, headers=headers).json()
-    
-    if r.get('results'):
-        return {"status": "ok", "id": r['results'][0]}
-    
-    # 2. Si falló, intentar búsqueda general para ver qué existe
-    url_all = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?limit=5"
-    r_all = requests.get(url_all, headers=headers).json()
-    
-    return {
-        "status": "error",
-        "msg": f"SKU '{sku_clean}' no encontrado.",
-        "debug": r_all.get('results', []) # Traemos IDs de otros productos para ver si el token funciona
-    }
+    try:
+        res = requests.get(f"https://api.mercadolibre.com/items/{item_id}", headers=headers).json()
+        # Buscamos el SKU en el campo correcto de MeLi
+        sku_real = res.get('seller_custom_field', 'SIN SKU')
+        return f"ID: {item_id} | SKU detectado en MeLi: {sku_real}"
+    except:
+        return f"ID: {item_id} | No se pudo obtener detalle"
 
-st.title("📦 Sistema de Gestión + Debug MeLi")
-
-# Placeholder para mensajes (esto evita que desaparezcan al recargar)
-mensaje_log = st.empty()
+st.title("📦 Diagnóstico de Sincronización")
 
 try:
     prods = supabase.table("productos").select("*").order("sku").execute().data
     if prods:
-        p_sel = st.selectbox("Producto:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
-        cant = st.number_input("Cantidad:", min_value=1, value=1)
+        p_sel = st.selectbox("Selecciona el producto que falló:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
         
-        if st.button("🚀 Ejecutar Venta y Sincronizar"):
-            # 1. Registro en Supabase
-            supabase.rpc("registrar_salida", {
-                "p_sku": p_sel['sku'], "p_cantidad": cant,
-                "p_canal": "Mercadolibre", "p_usuario": "Admin"
-            }).execute()
+        if st.button("🔍 Rastrear en Mercado Libre"):
+            headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
+            sku_target = p_sel['sku'].strip()
             
-            stock_f = supabase.table("productos").select("stock_total").eq("sku", p_sel['sku']).single().execute().data['stock_total']
+            st.info(f"Buscando SKU: `{sku_target}`...")
             
-            # 2. Sincronización con MeLi
-            res_debug = buscar_en_meli_debug(p_sel['sku'])
+            # 1. Intentar búsqueda directa
+            url = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?seller_custom_field={urllib.parse.quote(sku_target)}"
+            r = requests.get(url, headers=headers).json()
             
-            if res_debug["status"] == "ok":
-                item_id = res_debug["id"]
-                upd = requests.put(f"https://api.mercadolibre.com/items/{item_id}", 
-                                   json={"available_quantity": int(stock_f)}, 
-                                   headers={'Authorization': f'Bearer {MELI_TOKEN}'})
-                if upd.status_code == 200:
-                    mensaje_log.success(f"✅ ¡Sincronizado! {p_sel['sku']} actualizado a {stock_f} en MeLi.")
-                else:
-                    mensaje_log.error(f"❌ Error al subir stock: {upd.json().get('message')}")
+            # 2. Mostrar resultados encontrados
+            results = r.get('results', [])
+            if results:
+                st.success(f"¡Encontrado! MeLi dice que este SKU pertenece a la publicación: `{results[0]}`")
+                # Aquí es donde actualizaremos el stock en el siguiente paso
             else:
-                mensaje_log.warning(f"❓ {res_debug['msg']}")
-                with st.expander("Ver detalles técnicos del error"):
-                    st.write("Tu Token parece estar funcionando porque veo estos otros productos en tu cuenta:")
-                    st.write(res_debug["debug"])
-                    st.write("Pero ninguno coincide con el SKU que enviaste.")
+                st.error("❌ Mercado Libre no reconoce ese SKU con una búsqueda directa.")
+                
+                # 3. MODO INVESTIGACIÓN: Ver qué publicaciones tienes activas realmente
+                st.write("---")
+                st.write("### 🕵️ Analizando tus últimas publicaciones:")
+                url_recientes = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?limit=10"
+                r_recientes = requests.get(url_recientes, headers=headers).json()
+                
+                items_recientes = r_recientes.get('results', [])
+                for idx, item_id in enumerate(items_recientes):
+                    detalle = investigar_item_meli(item_id)
+                    st.write(f"{idx+1}. {detalle}")
+                
+                st.info("Compara el 'SKU detectado' arriba con el de tu base de datos. Si hay una diferencia (aunque sea un espacio), la sincronización fallará.")
 
 except Exception as e:
-    st.error(f"Error general: {e}")
+    st.error(f"Error de conexión: {e}")
