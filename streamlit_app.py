@@ -37,7 +37,6 @@ supabase: Client = init_supabase()
 USUARIOS_VALIDOS = ["pau", "dany", "miguel"]
 
 # --- LÓGICA DE WEBHOOK (MERCADO LIBRE -> MYM) ---
-# Se ejecuta SOLO si la URL tiene los parámetros de MeLi
 q_params = st.query_params
 if "topic" in q_params and "resource" in q_params:
     topic = q_params.get("topic")
@@ -47,12 +46,15 @@ if "topic" in q_params and "resource" in q_params:
             headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
             order_res = requests.get(f"https://api.mercadolibre.com{resource}", headers=headers).json()
             for item in order_res.get('order_items', []):
-                sku = item.get('item', {}).get('seller_custom_field')
+                # Se obtiene el SKU del campo 'seller_custom_field' de MeLi
+                sku_meli = item.get('item', {}).get('seller_custom_field')
                 cant = item.get('quantity')
-                if sku:
+                if sku_meli:
                     supabase.rpc("registrar_salida", {
-                        "p_sku": sku, "p_cantidad": int(cant), 
-                        "p_canal": "Mercadolibre", "p_usuario": "BOT_MELI"
+                        "p_sku": sku_meli.strip(), 
+                        "p_cantidad": int(cant), 
+                        "p_canal": "Mercadolibre", 
+                        "p_usuario": "BOT_MELI"
                     }).execute()
         except:
             pass
@@ -72,23 +74,32 @@ def buscar_productos(query: str = ""):
         return []
 
 def sincronizar_stock_meli(sku, nuevo_stock):
-    if not MELI_TOKEN or not MELI_USER_ID: return False
+    """Actualiza el stock en Mercado Libre buscando por SKU"""
+    if not MELI_TOKEN or not MELI_USER_ID: 
+        return False
     try:
-        sku_encoded = urllib.parse.quote(sku)
-        search_url = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?sku={sku_encoded}"
+        sku_clean = str(sku).strip()
+        sku_encoded = urllib.parse.quote(sku_clean)
         headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
+        
+        # 1. Buscar el Item ID en MeLi usando el SKU
+        search_url = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?sku={sku_encoded}"
         search_res = requests.get(search_url, headers=headers).json()
+        
         if search_res.get('results'):
             item_id = search_res['results'][0]
-            requests.put(f"https://api.mercadolibre.com/items/{item_id}", 
-                         json={"available_quantity": int(nuevo_stock)}, headers=headers)
-            return True
+            # 2. Actualizar la cantidad disponible
+            update_url = f"https://api.mercadolibre.com/items/{item_id}"
+            payload = {"available_quantity": int(nuevo_stock)}
+            res = requests.put(update_url, json=payload, headers=headers)
+            return res.status_code == 200
     except:
         pass
     return False
 
 def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
     try:
+        # Registro en Base de Datos
         if tipo == "entrada":
             if precio is not None:
                 supabase.table("productos").update({"precio_costo_contenedor": float(precio)}).eq("sku", sku).execute()
@@ -97,7 +108,7 @@ def registrar_movimiento(tipo, sku, cantidad, extra_val, usuario, precio=None):
             res = supabase.rpc("registrar_salida", {"p_sku": sku, "p_cantidad": int(cantidad), "p_canal": extra_val, "p_usuario": usuario}).execute()
             if "ERROR" in res.data: return False, res.data
         
-        # Sincronizar MeLi
+        # Sincronización con MeLi post-movimiento
         p_data = supabase.table("productos").select("stock_total").eq("sku", sku).single().execute()
         if p_data.data:
             sincronizar_stock_meli(sku, p_data.data['stock_total'])
@@ -148,7 +159,10 @@ with t1:
                 can = st.selectbox("Canal:", ["Mercadolibre", "WhatsApp", "Web", "Retiro"])
                 if st.button("🚀 Vender", type="primary", width="stretch"):
                     ok, m = registrar_movimiento("salida", p['sku'], cant, can, st.session_state.usuario_ingresado)
-                    if ok: st.success("Vendido!"); st.session_state.form_count += 1; st.rerun()
+                    if ok: 
+                        st.success("Vendido!")
+                        st.session_state.form_count += 1
+                        st.rerun()
 
     with c_e:
         st.subheader("Entrada")
@@ -160,23 +174,29 @@ with t1:
                 cant_e = st.number_input("Cantidad:", min_value=1, key=f"ce_{st.session_state.form_count}")
                 if st.button("📥 Cargar", type="primary", width="stretch"):
                     ok, m = registrar_movimiento("entrada", p_e['sku'], cant_e, p_e['und_x_embalaje'], st.session_state.usuario_ingresado)
-                    if ok: st.success("Cargado!"); st.session_state.form_count += 1; st.rerun()
+                    if ok: 
+                        st.success("Cargado!")
+                        st.session_state.form_count += 1
+                        st.rerun()
 
 with t2:
-    st.subheader("Historial")
+    st.subheader("Historial de Ventas")
     h = supabase.table("salidas").select("*").order("fecha", desc=True).limit(20).execute().data
-    if h: st.table(pd.DataFrame(h)[["fecha", "sku", "cantidad", "canal", "usuario"]])
+    if h: 
+        st.dataframe(pd.DataFrame(h)[["fecha", "sku", "cantidad", "canal", "usuario"]], width="stretch", hide_index=True)
 
 with t3:
-    st.subheader("Stock")
+    st.subheader("Estado de Stock")
     s = buscar_productos()
-    if s: st.dataframe(pd.DataFrame(s)[["sku", "nombre", "stock_total"]], width="stretch")
+    if s: 
+        st.dataframe(pd.DataFrame(s)[["sku", "nombre", "stock_total"]], width="stretch", hide_index=True)
 
 with t4:
-    with st.form("nuevo"):
-        st.write("Nuevo Producto")
-        n_s = st.text_input("SKU").upper()
+    with st.form("nuevo_prod"):
+        st.subheader("Nuevo Producto")
+        n_s = st.text_input("SKU").upper().strip()
         n_n = st.text_input("Nombre")
-        if st.form_submit_button("Crear"):
-            supabase.table("productos").insert({"sku": n_s, "nombre": n_n, "stock_total": 0}).execute()
-            st.rerun()
+        if st.form_submit_button("Crear Producto", width="stretch"):
+            if n_s and n_n:
+                supabase.table("productos").insert({"sku": n_s, "nombre": n_n, "stock_total": 0}).execute()
+                st.rerun()
