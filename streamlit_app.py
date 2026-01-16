@@ -1,6 +1,7 @@
 import streamlit as st
 from supabase import create_client, Client
 import os
+import pandas as pd  # <-- Esta era la línea que faltaba
 import requests
 import urllib.parse
 
@@ -10,6 +11,7 @@ st.set_page_config(page_title="M&M Hogar - Sistema Sincronizado", layout="wide")
 # MENSAJE PARA EL EQUIPO
 st.warning("⚠️ **PAU - DANY ESTOY HACIENDO PRUEBAS, VUELVAN MAS RATO**")
 
+# Conexión
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
@@ -70,7 +72,6 @@ def buscar_y_actualizar_meli(sku_objetivo, nueva_cantidad):
 # --- INTERFAZ PRINCIPAL ---
 st.title("📦 Gestión de Inventario MyM")
 
-# Pestañas para organizar
 tab1, tab2 = st.tabs(["🚀 Registrar Venta", "📊 Ver Inventario"])
 
 with tab1:
@@ -104,6 +105,6 @@ with tab1:
         st.error(f"Error de base de datos: {e}")
 
 with tab2:
-    if prods:
+    if 'prods' in locals() and prods:
         df = pd.DataFrame(prods)[["sku", "nombre", "stock_total"]]
         st.dataframe(df, use_container_width=True)
