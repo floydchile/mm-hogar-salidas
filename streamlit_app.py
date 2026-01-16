@@ -6,10 +6,8 @@ import requests
 import urllib.parse
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="M&M Hogar - Sincronización Total", layout="wide")
-
-# MENSAJE PARA EL EQUIPO
-st.warning("⚠️ **PAU - DANY ESTOY HACIENDO PRUEBAS, VUELVAN MAS RATO**")
+st.set_page_config(page_title="M&M Hogar - Sincro Robusta", layout="wide")
+st.warning("⚠️ **PAU - DANY: MODO RESCATE ACTIVADO**")
 
 # Conexión
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -19,110 +17,84 @@ MELI_USER_ID = os.getenv("MELI_USER_ID")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def buscar_en_meli_exhaustivo(sku_objetivo):
-    """Intenta 3 métodos diferentes para encontrar el producto en MeLi"""
-    headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
-    sku_clean = str(sku_objetivo).strip()
-    encoded_sku = urllib.parse.quote(sku_clean)
-    
-    # MÉTODO 1: Por parámetro oficial de SKU
-    url1 = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?seller_custom_field={encoded_sku}"
-    res1 = requests.get(url1, headers=headers).json()
-    ids = res1.get('results', [])
-    
-    # MÉTODO 2: Por búsqueda de texto general (si el 1 falló)
-    if not ids:
-        url2 = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?q={encoded_sku}"
-        res2 = requests.get(url2, headers=headers).json()
-        ids = res2.get('results', [])
-        
-    # MÉTODO 3: Búsqueda por SKU en el filtro de ítems
-    if not ids:
-        url3 = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?sku={encoded_sku}"
-        res3 = requests.get(url3, headers=headers).json()
-        ids = res3.get('results', [])
-
-    return list(set(ids)) # Devolvemos IDs únicos
-
-def sincronizar_producto(sku_objetivo, nueva_cantidad):
+def sincronizar_producto_final(sku_objetivo, nueva_cantidad):
     headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
     sku_clean = str(sku_objetivo).strip()
     
-    # 1. Buscar IDs potenciales
-    ids_potenciales = buscar_en_meli_exhaustivo(sku_clean)
+    # 1. INTENTO RAPIDO: Búsqueda por SKU
+    url_search = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?q={urllib.parse.quote(sku_clean)}"
+    ids_potenciales = requests.get(url_search, headers=headers).json().get('results', [])
     
+    # 2. INTENTO DE RESPALDO: Ver últimas 50 publicaciones del vendedor (Barrido)
     if not ids_potenciales:
-        return f"❓ No se encontró el SKU '{sku_clean}' por ningún método de búsqueda."
+        url_recent = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?sort=date_desc&limit=50"
+        ids_potenciales = requests.get(url_recent, headers=headers).json().get('results', [])
 
     item_id_final = None
-    
-    # 2. Inspeccionar cada ID para confirmar el SKU en atributos
+    detalles_encontrados = []
+
+    # 3. INSPECCIÓN EXHAUSTIVA
     for item_id in ids_potenciales:
         det = requests.get(f"https://api.mercadolibre.com/items/{item_id}", headers=headers).json()
         
-        # Verificamos estado
-        if det.get('status') not in ['active', 'paused']:
-            continue
-            
-        # Revisamos SKU en campo principal y en atributos (lo que vimos en el JSON anterior)
-        sku_main = str(det.get('seller_custom_field', '')).strip()
+        # Guardamos datos para diagnóstico si falla
         sku_attr = next((str(a.get('value_name', '')).strip() for a in det.get('attributes', []) if a.get('id') == 'SELLER_SKU'), "")
+        sku_main = str(det.get('seller_custom_field', '')).strip()
         
-        if sku_clean == sku_main or sku_clean == sku_attr:
+        status = det.get('status')
+        detalles_encontrados.append(f"ID: {item_id} | Status: {status} | SKU_Attr: {sku_attr}")
+
+        if sku_clean in [sku_attr, sku_main] and status in ['active', 'paused']:
             item_id_final = item_id
             break
             
     if not item_id_final:
-        return f"❌ SKU '{sku_clean}' hallado en registros pero ninguna publicación está ACTIVA."
+        st.error("🔍 **Diagnóstico de búsqueda:**")
+        for d in detalles_encontrados[:5]: st.write(d) # Mostrar solo los primeros 5
+        return f"❌ No se encontró la publicación ACTIVA para '{sku_clean}'."
 
-    # 3. ACTUALIZACIÓN Y "REPARACIÓN"
-    # Al enviar seller_custom_field aquí, "arreglamos" el producto para que MeLi lo encuentre más rápido la próxima vez
+    # 4. ACTUALIZACIÓN
     url_upd = f"https://api.mercadolibre.com/items/{item_id_final}"
-    payload = {
-        "available_quantity": int(nueva_cantidad),
-        "seller_custom_field": sku_clean 
-    }
+    payload = {"available_quantity": int(nueva_cantidad), "seller_custom_field": sku_clean}
     r_upd = requests.put(url_upd, json=payload, headers=headers)
     
     if r_upd.status_code == 200:
-        return f"✅ Sincronizado con éxito en {item_id_final} ({nueva_cantidad} uds)."
+        return f"✅ Sincronizado en {item_id_final} ({nueva_cantidad} uds)."
     else:
         return f"❌ Error MeLi: {r_upd.json().get('message')}"
 
-# --- INTERFAZ STREAMLIT ---
-st.title("📦 Sistema de Gestión MyM Hogar")
+# --- INTERFAZ ---
+st.title("📦 Panel de Control MyM")
 
-tab1, tab2 = st.tabs(["🚀 Salida de Stock", "📊 Inventario"])
+tab1, tab2, tab3 = st.tabs(["🚀 Salida Automática", "🛠️ Sincro Manual", "📊 Stock"])
 
 with tab1:
-    try:
-        prods = supabase.table("productos").select("*").order("sku").execute().data
-        if prods:
-            with st.form("venta_form"):
-                p_sel = st.selectbox("Producto:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']} (Stock: {x['stock_total']})")
-                cant = st.number_input("Cantidad a descontar:", min_value=1, value=1)
-                submit = st.form_submit_button("Finalizar y Sincronizar", use_container_width=True)
-                
-                if submit:
-                    # 1. Supabase
-                    supabase.rpc("registrar_salida", {
-                        "p_sku": p_sel['sku'], "p_cantidad": cant,
-                        "p_canal": "Venta Manual", "p_usuario": "Admin"
-                    }).execute()
-                    
-                    # 2. Stock final
-                    stock_f = supabase.table("productos").select("stock_total").eq("sku", p_sel['sku']).single().execute().data['stock_total']
-                    
-                    # 3. MeLi
-                    with st.spinner("Sincronizando con Mercado Libre..."):
-                        res_meli = sincronizar_producto(p_sel['sku'], stock_f)
-                    
-                    if "✅" in res_meli: st.success(res_meli)
-                    else: st.error(res_meli)
-                    
-    except Exception as e:
-        st.error(f"Error: {e}")
+    prods = supabase.table("productos").select("*").order("sku").execute().data
+    if prods:
+        with st.form("venta_auto"):
+            p = st.selectbox("Producto:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
+            cant = st.number_input("Cantidad:", min_value=1, value=1)
+            if st.form_submit_button("Registrar y Sincronizar"):
+                supabase.rpc("registrar_salida", {"p_sku": p['sku'], "p_cantidad": cant, "p_canal": "Venta", "p_usuario": "Admin"}).execute()
+                stock_f = supabase.table("productos").select("stock_total").eq("sku", p['sku']).single().execute().data['stock_total']
+                res = sincronizar_producto_final(p['sku'], stock_f)
+                if "✅" in res: st.success(res)
+                else: st.error(res)
 
 with tab2:
-    if 'prods' in locals() and prods:
-        st.dataframe(pd.DataFrame(prods)[["sku", "nombre", "stock_total"]], use_container_width=True)
+    st.subheader("Si el buscador falla, usa esto:")
+    col1, col2, col3 = st.columns(3)
+    with col1: mlc_manual = st.text_input("ID Publicación (ej: MLC2884836674)")
+    with col2: sku_manual = st.text_input("SKU en MyM (ej: EBSP XXXG42)")
+    with col3: stock_manual = st.number_input("Stock Real", min_value=0)
+    
+    if st.button("Forzar Sincronización Manual"):
+        headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
+        res = requests.put(f"https://api.mercadolibre.com/items/{mlc_manual}", 
+                           json={"available_quantity": int(stock_manual), "seller_custom_field": sku_manual}, 
+                           headers=headers)
+        if res.status_code == 200: st.success("🚀 ¡Forzado con éxito!")
+        else: st.error(f"Error: {res.json().get('message')}")
+
+with tab3:
+    if prods: st.dataframe(pd.DataFrame(prods)[["sku", "nombre", "stock_total"]], use_container_width=True)
