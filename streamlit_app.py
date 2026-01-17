@@ -43,8 +43,8 @@ def renovar_tokens_meli():
 
 # --- MOTOR WALMART (TOKEN TEMPORAL) ---
 def obtener_token_walmart():
-    url = "https://marketplace.walmartchile.cl/api/v3/token"
-    # Walmart es muy estricto con el Content-Type en el token
+    # URL de producción oficial para Chile
+    url = "https://v3.walmartchile.cl/api/v3/token"
     headers = {
         "WM_SVC.NAME": "Walmart Marketplace",
         "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
@@ -53,20 +53,47 @@ def obtener_token_walmart():
     }
     data = {"grant_type": "client_credentials"}
     try:
-        # Usamos auth basic con ID y SECRET
-        res = requests.post(url, data=data, auth=(WAL_CLIENT_ID, WAL_CLIENT_SECRET), headers=headers, timeout=10)
+        res = requests.post(url, data=data, auth=(WAL_CLIENT_ID, WAL_CLIENT_SECRET), headers=headers, timeout=15)
         if res.status_code == 200:
             return res.json().get("access_token")
         else:
-            st.error(f"⚠️ Error Token Walmart: {res.status_code} - {res.text}")
+            # Si esta URL falla, probamos la alternativa de respaldo
+            url_alt = "https://marketplace.walmartchile.cl/api-proxy/v3/token"
+            res = requests.post(url_alt, data=data, auth=(WAL_CLIENT_ID, WAL_CLIENT_SECRET), headers=headers, timeout=15)
+            if res.status_code == 200:
+                return res.json().get("access_token")
+            st.error(f"⚠️ Walmart Auth Error: {res.status_code}")
             return None
     except Exception as e:
-        st.error(f"⚠️ Error Conexión Walmart Token: {e}")
+        st.error(f"⚠️ Error de red Walmart: {e}")
         return None
 
 def sync_walmart_stock(sku_w, qty):
     token = obtener_token_walmart()
     if not token: return False
+    
+    # URL de producción para Inventario
+    url = f"https://v3.walmartchile.cl/api/v3/inventory?sku={sku_w}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "WM_SEC.ACCESS_TOKEN": token,
+        "WM_SVC.NAME": "Walmart Marketplace",
+        "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "sku": sku_w,
+        "quantity": {
+            "unit": "EACH",
+            "amount": int(qty)
+        }
+    }
+    try:
+        res = requests.put(url, json=payload, headers=headers, timeout=15)
+        return res.status_code in [200, 201]
+    except:
+        return False
     
     # URL de inventario
     url = f"https://marketplace.walmartchile.cl/api/v3/inventory?sku={sku_w}"
@@ -193,4 +220,5 @@ try:
         st.warning("Carga productos en Supabase primero.")
 except Exception as e:
     st.error(f"Error: {e}")
+
 
