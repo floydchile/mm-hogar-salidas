@@ -60,16 +60,44 @@ def renovar_tokens_meli():
 
 def sync_meli_stock(qty):
     tokens = obtener_tokens_db()
-    if not tokens: return False
-    url = "https://api.mercadolibre.com/items/MLC2884836674"
-    headers = {'Authorization': f'Bearer {tokens["access_token"]}', 'Content-Type': 'application/json'}
-    res = requests.put(url, json={"available_quantity": int(qty)}, headers=headers)
-    if res.status_code == 401:
-        nuevo = renovar_tokens_meli()
-        if nuevo:
-            headers['Authorization'] = f'Bearer {nuevo}'
-            res = requests.put(url, json={"available_quantity": int(qty)}, headers=headers)
-    return res.status_code in [200, 201]
+    if not tokens: 
+        st.error("❌ MeLi: No hay tokens en la base de datos.")
+        return False
+    
+    # Probamos con el ID que tenemos
+    item_id = "MLC2884836674"
+    url = f"https://api.mercadolibre.com/items/{item_id}"
+    headers = {
+        'Authorization': f'Bearer {tokens["access_token"]}',
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        res = requests.put(url, json={"available_quantity": int(qty)}, headers=headers, timeout=10)
+        
+        # CASO 1: Token vencido (Intentamos renovar)
+        if res.status_code == 401:
+            st.info("🔄 Token vencido, intentando renovar con el TG...")
+            nuevo_access = renovar_tokens_meli()
+            if nuevo_access:
+                headers['Authorization'] = f'Bearer {nuevo_access}'
+                res = requests.put(url, json={"available_quantity": int(qty)}, headers=headers)
+            else:
+                st.error("❌ El Refresh Token (TG) fue rechazado por MeLi. Genera uno nuevo.")
+                return False
+
+        # CASO 2: Error de ID o Permisos
+        if res.status_code not in [200, 201]:
+            detalles = res.json()
+            st.error(f"❌ Error Real de MeLi ({res.status_code}): {detalles.get('message', 'Sin mensaje')}")
+            # Si el error es 'item.not_found', el ID está mal
+            # Si el error es 'forbidden', la App no tiene permiso sobre este vendedor
+            return False
+            
+        return True
+    except Exception as e:
+        st.error(f"❌ Error de conexión con MeLi: {e}")
+        return False
 
 def sync_woo_stock(product_id, qty):
     url = f"{WOO_URL}/wp-json/wc/v3/products/{product_id}"
@@ -127,3 +155,4 @@ try:
         st.warning("No hay productos.")
 except Exception as e:
     st.error(f"Error: {e}")
+
