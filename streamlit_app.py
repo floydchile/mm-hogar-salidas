@@ -1,15 +1,18 @@
 def enviar_stock_fala(sku, qty):
-    # Estructura exacta requerida por UpdatePriceQuantity en Falabella Chile
-    xml_data = '<?xml version="1.0" encoding="UTF-8"?>'
-    xml_data += '<Request>'
-    xml_data += '  <Product>'
-    xml_data += '    <SellerSku>' + str(sku) + '</SellerSku>'
-    xml_data += '    <Quantity>' + str(int(qty)) + '</Quantity>'
-    xml_data += '  </Product>'
-    xml_data += '</Request>'
+    # Construcción quirúrgica: Sin llaves, sin f-strings, sin errores.
+    piezas = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<Request>',
+        '  <Product>',
+        '    <SellerSku>', str(sku), '</SellerSku>',
+        '    <Quantity>', str(int(qty)), '</Quantity>',
+        '  </Product>',
+        '</Request>'
+    ]
+    xml_data = "".join(piezas)
     
     params = {
-        "Action": "UpdatePriceQuantity", # Volvemos a la acción base pero con XML corregido
+        "Action": "UpdatePriceQuantity",
         "Format": "JSON",
         "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
         "UserID": F_USER_ID,
@@ -18,16 +21,19 @@ def enviar_stock_fala(sku, qty):
     
     try:
         url = firmar_fala(params)
-        # Importante: Usamos content-type x-www-form-urlencoded y el body plano
-        res = requests.post(url, data=xml_data, headers={'Content-Type': 'application/x-www-form-urlencoded'})
-        data = res.json()
+        # Probamos enviando el XML como texto plano, que es lo que menos errores da
+        res = requests.post(url, data=xml_data, headers={'Content-Type': 'application/xml'})
         
-        # Si hay SuccessResponse, Falabella aceptó el paquete
+        # Si la respuesta no es JSON, capturamos el error de texto
+        try:
+            data = res.json()
+        except:
+            return False, "Respuesta no-JSON: " + res.text[:50]
+        
         if "SuccessResponse" in data:
             return True, "OK"
-        
-        # Si falla, capturamos el mensaje de error para diagnóstico
-        msg_error = data.get("ErrorResponse", {}).get("Head", {}).get("ErrorMessage", "Error Desconocido")
-        return False, msg_error
+            
+        msg = data.get("ErrorResponse", {}).get("Head", {}).get("ErrorMessage", "Error")
+        return False, msg
     except Exception as e:
-        return False, str(e)
+        return False, "Error de red: " + str(e)
