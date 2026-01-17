@@ -25,6 +25,18 @@ if not SUPABASE_URL:
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 2. MOTORES DE SINCRONIZACIÓN (SALIDA)
+def sync_meli_stock(qty):
+    """Actualiza stock en Mercado Libre con manejo de errores de Token"""
+    url = "https://api.mercadolibre.com/items/MLC2884836674"
+    headers = {'Authorization': f'Bearer {MELI_TOKEN}', 'Content-Type': 'application/json'}
+    try:
+        res = requests.put(url, json={"available_quantity": int(qty)}, headers=headers, timeout=10)
+        if res.status_code == 401:
+            st.error("❌ Token de Mercado Libre expirado. Por favor, actualiza MELI_TOKEN en Railway.")
+            return False
+        return res.status_code in [200, 201]
+    except: return False
+
 def sync_woo_stock(product_id, qty):
     url = f"{WOO_URL}/wp-json/wc/v3/products/{product_id}"
     try:
@@ -69,7 +81,6 @@ try:
         st.subheader("📊 Inventario Maestro")
         st.dataframe(df[["sku", "sku_falabella", "woo_id", "stock_total"]], use_container_width=True)
 
-        # SECCIÓN A: ACTUALIZACIÓN MANUAL
         st.divider()
         st.subheader("🔄 Actualizar Stock (Manual)")
         c1, c2 = st.columns(2)
@@ -82,12 +93,14 @@ try:
             p = df[df["sku"] == sku_sel].iloc[0]
             supabase.table("productos").update({"stock_total": stk_val}).eq("sku", sku_sel).execute()
             if "XXXG42" in str(sku_sel):
-                requests.put(f"https://api.mercadolibre.com/items/MLC2884836674", json={"available_quantity": int(stk_val)}, headers={'Authorization': f'Bearer {MELI_TOKEN}'})
-            if p.get("sku_falabella"): sync_fala_stock(p["sku_falabella"], stk_val)
-            if p.get("woo_id"): sync_woo_stock(p["woo_id"], stk_val)
-            st.success("Sincronización manual exitosa.")
+                if sync_meli_stock(stk_val): st.success("✅ MeLi: OK")
+            if p.get("sku_falabella"): 
+                sync_fala_stock(p["sku_falabella"], stk_val)
+                st.success(f"✅ Falabella: OK")
+            if p.get("woo_id"): 
+                if sync_woo_stock(p["woo_id"], stk_val): st.success("✅ Web: OK")
+            st.info("Sincronización manual procesada.")
 
-        # SECCIÓN B: DETECTOR DE VENTAS
         st.divider()
         st.subheader("🕵️ Detector de Ventas (Falabella + Web)")
         if st.button("🔥 BUSCAR VENTAS NUEVAS"):
@@ -97,47 +110,53 @@ try:
                 # --- FALABELLA ---
                 f_data = obtener_pedidos_falabella()
                 if f_data and "SuccessResponse" in f_data:
-                    ordenes_f = f_data["SuccessResponse"]["Body"].get("Orders", {}).get("Order", [])
+                    body = f_data["SuccessResponse"].get("Body", {})
+                    ordenes_f = body.get("Orders", {}).get("Order", [])
                     if isinstance(ordenes_f, dict): ordenes_f = [ordenes_f]
+                    
                     for o in ordenes_f:
                         id_f = f"FAL-{o['OrderId']}"
                         if not supabase.table("ventas_procesadas").select("*").eq("id_orden", id_f).execute().data:
-                            items = o.get("OrderItems", {}).get("OrderItem", [])
+                            items_container = o.get("OrderItems", {})
+                            items = items_container.get("OrderItem", [])
                             if isinstance(items, dict): items = [items]
-                            sku_f = items[0].get("SellerSku")
-                            p_db = supabase.table("productos").select("*").eq("sku_falabella", sku_f).execute()
-                            if p_db.data:
-                                p = p_db.data[0]
-                                nuevo = int(p["stock_total"]) - 1
-                                supabase.table("ventas_procesadas").insert({"id_orden": id_f, "marketplace": "falabella", "sku": p["sku"]}).execute()
-                                supabase.table("productos").update({"stock_total": nuevo}).eq("sku", p["sku"]).execute()
-                                # Replicar a otros
-                                if "XXXG42" in str(p["sku"]): requests.put(f"https://api.mercadolibre.com/items/MLC2884836674", json={"available_quantity": nuevo}, headers={'Authorization': f'Bearer {MELI_TOKEN}'})
-                                if p.get("woo_id"): sync_woo_stock(p["woo_id"], nuevo)
-                                st.warning(f"Venta Falabella: {id_f} procesada.")
-                                conteo += 1
+                            
+                            if len(items) > 0: # <-- CORRECCIÓN INDEX ERROR
+                                sku_f = items[0].get("SellerSku")
+                                p_db = supabase.table("productos").select("*").eq("sku_falabella", sku_f).execute()
+                                if p_db.data:
+                                    p = p_db.data[0]
+                                    nuevo = max(0, int(p["stock_total"]) - 1)
+                                    supabase.table("ventas_procesadas").insert({"id_orden": id_f, "marketplace": "falabella", "sku": p["sku"]}).execute()
+                                    supabase.table("productos").update({"stock_total": nuevo}).eq("sku", p["sku"]).execute()
+                                    if "XXXG42" in str(p["sku"]): sync_meli_stock(nuevo)
+                                    if p.get("woo_id"): sync_woo_stock(p["woo_id"], nuevo)
+                                    st.warning(f"Venta Falabella: {id_f} procesada.")
+                                    conteo += 1
 
                 # --- WOOCOMMERCE ---
                 pedidos_w = obtener_pedidos_woo()
                 for pw in pedidos_w:
                     id_w = f"WOO-{pw['id']}"
                     if not supabase.table("ventas_procesadas").select("*").eq("id_orden", id_w).execute().data:
-                        for item in pw.get("line_items", []):
-                            w_id = str(item["product_id"])
-                            p_db = supabase.table("productos").select("*").eq("woo_id", w_id).execute()
-                            if p_db.data:
-                                p = p_db.data[0]
-                                nuevo = int(p["stock_total"]) - int(item["quantity"])
-                                supabase.table("ventas_procesadas").insert({"id_orden": id_w, "marketplace": "web", "sku": p["sku"]}).execute()
-                                supabase.table("productos").update({"stock_total": nuevo}).eq("sku", p["sku"]).execute()
-                                # Replicar a otros
-                                if "XXXG42" in str(p["sku"]): requests.put(f"https://api.mercadolibre.com/items/MLC2884836674", json={"available_quantity": nuevo}, headers={'Authorization': f'Bearer {MELI_TOKEN}'})
-                                if p.get("sku_falabella"): sync_fala_stock(p["sku_falabella"], nuevo)
-                                st.warning(f"Venta Web: Pedido #{pw['id']} procesado.")
-                                conteo += 1
+                        items_w = pw.get("line_items", [])
+                        if items_w: # <-- CORRECCIÓN INDEX ERROR
+                            for item in items_w:
+                                w_id = str(item["product_id"])
+                                p_db = supabase.table("productos").select("*").eq("woo_id", w_id).execute()
+                                if p_db.data:
+                                    p = p_db.data[0]
+                                    nuevo = max(0, int(p["stock_total"]) - int(item["quantity"]))
+                                    supabase.table("ventas_procesadas").insert({"id_orden": id_w, "marketplace": "web", "sku": p["sku"]}).execute()
+                                    supabase.table("productos").update({"stock_total": nuevo}).eq("sku", p["sku"]).execute()
+                                    if "XXXG42" in str(p["sku"]): sync_meli_stock(nuevo)
+                                    if p.get("sku_falabella"): sync_fala_stock(p["sku_falabella"], nuevo)
+                                    st.warning(f"Venta Web: Pedido #{pw['id']} procesado.")
+                                    conteo += 1
                 
                 if conteo == 0: st.info("No hay ventas nuevas.")
                 else: st.success(f"Se sincronizaron {conteo} ventas.")
-
+    else:
+        st.warning("La base de datos de productos está vacía.")
 except Exception as e:
-    st.error(f"Error: {e}")
+    st.error(f"Error general del sistema: {e}")
