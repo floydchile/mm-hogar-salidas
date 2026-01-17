@@ -9,8 +9,9 @@ st.set_page_config(page_title="MyM Hogar - Omnicanal", layout="wide")
 # Carga de variables desde Railway
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-MELI_CLIENT_ID = os.getenv("MELI_CLIENT_ID")
+MELI_CLIENT_ID = os.getenv("MELI_APP_ID")
 MELI_CLIENT_SECRET = os.getenv("MELI_CLIENT_SECRET")
+MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN") 
 WOO_URL = os.getenv("WOO_URL")
 WOO_CK = os.getenv("WOO_CK")
 WOO_CS = os.getenv("WOO_CS")
@@ -179,3 +180,4 @@ try:
 
 except Exception as e:
     st.error(f"Error: {e}")
+
