@@ -1,6 +1,6 @@
 import streamlit as st
 from supabase import create_client
-import os, pandas as pd, requests, hashlib, hmac, urllib.parse, uuid
+import os, pandas as pd, requests, hashlib, hmac, urllib.parse, uuid, base64
 from datetime import datetime, timezone
 
 # 1. CONFIGURACIÓN E IDENTIDADES
@@ -57,21 +57,18 @@ def renovar_tokens_meli():
         return data['access_token']
     return None
 
-# --- MOTOR WALMART CHILE (MIRAKL) ---
-import base64
-
+# --- MOTOR WALMART CHILE (CONFIGURACIÓN FINAL) ---
 def obtener_token_walmart():
-    # URL oficial de autenticación
-    url = "https://v3.walmartchile.cl/api/v3/token"
+    # Usamos la URL global que encontraste como puerta de entrada
+    url = "https://marketplace.walmartapis.com/v3/token"
     
-    # 1. Creamos la cadena clientId:clientSecret
+    # Formato requerido: Basic Base64(clientId:clientSecret)
     auth_str = f"{WAL_CLIENT_ID}:{WAL_CLIENT_SECRET}"
-    # 2. La codificamos en Base64
     auth_b64 = base64.b64encode(auth_str.encode()).decode()
     
     headers = {
         "Authorization": f"Basic {auth_b64}",
-        "WM_SVC.NAME": "Walmart Marketplace",
+        "WM_SVC.NAME": "MyM_Hogar",
         "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
         "Accept": "application/json",
         "Content-Type": "application/x-www-form-urlencoded"
@@ -79,24 +76,54 @@ def obtener_token_walmart():
     data = {"grant_type": "client_credentials"}
     
     try:
-        # Enviamos la petición con el header ya codificado
         res = requests.post(url, data=data, headers=headers, timeout=15)
         if res.status_code == 200:
             return res.json().get("access_token")
         else:
-            st.error(f"❌ Error Auth Walmart ({res.status_code}): {res.text}")
+            # Reintento por la ruta de Chile directa si la global falla
+            url_cl = "https://v3.walmartchile.cl/api/v3/token"
+            res_cl = requests.post(url_cl, data=data, headers=headers, timeout=15)
+            if res_cl.status_code == 200:
+                return res_cl.json().get("access_token")
             return None
-    except Exception as e:
-        # Si v3 falla por DNS en Railway, intentamos la ruta Mirakl con el mismo Base64
-        try:
-            url_alt = "https://walmartchile-prod.mirakl.net/api/v3/token"
-            res = requests.post(url_alt, data=data, headers=headers, timeout=15)
-            if res.status_code == 200:
-                return res.json().get("access_token")
-        except: pass
-        st.error(f"❌ Error de conexión Walmart: {e}")
+    except:
         return None
-# --- MOTORES DE SINCRONIZACIÓN ---
+
+def sync_walmart_stock(sku_w, qty):
+    token = obtener_token_walmart()
+    if not token: return False
+    
+    # URL de Inventario Global para Chile
+    url = f"https://marketplace.walmartapis.com/v3/inventory?sku={sku_w}"
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "WM_SEC.ACCESS_TOKEN": token,
+        "WM_MARKET": "cl",
+        "WM_SVC.NAME": "MyM_Hogar",
+        "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "sku": sku_w,
+        "quantity": {"unit": "EACH", "amount": int(qty)}
+    }
+    
+    try:
+        res = requests.put(url, json=payload, headers=headers, timeout=15)
+        if res.status_code in [200, 201]:
+            return True
+        else:
+            # Intento final con la URL de Chile
+            url_cl = f"https://v3.walmartchile.cl/api/v3/inventory?sku={sku_w}"
+            res_cl = requests.put(url_cl, json=payload, headers=headers, timeout=15)
+            return res_cl.status_code in [200, 201]
+    except:
+        return False
+
+# --- MOTORES DE SINCRONIZACIÓN ADICIONALES ---
 
 def sync_meli_stock(qty):
     tokens = obtener_tokens_meli_db()
@@ -110,29 +137,6 @@ def sync_meli_stock(qty):
             headers['Authorization'] = f'Bearer {nuevo}'
             res = requests.put(url, json={"available_quantity": int(qty)}, headers=headers)
     return res.status_code in [200, 201]
-
-def sync_walmart_stock(sku_w, qty):
-    token = obtener_token_walmart()
-    if not token: return False
-    # Endpoint corregido para inventario
-    url = "https://marketplace.walmartchile.cl/api/v3/inventory"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "WM_SEC.ACCESS_TOKEN": token,
-        "WM_SVC.NAME": "Walmart Marketplace",
-        "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
-    payload = {"sku": sku_w, "quantity": {"unit": "EACH", "amount": int(qty)}}
-    try:
-        # Intentamos con la URL principal, si falla el host, intentamos Mirakl directo
-        res = requests.put(url, json=payload, headers=headers, timeout=15)
-        if res.status_code not in [200, 201]:
-            url_alt = "https://walmartchile-prod.mirakl.net/api/v3/inventory"
-            res = requests.put(url_alt, json=payload, headers=headers, timeout=15)
-        return res.status_code in [200, 201]
-    except: return False
 
 def sync_woo_stock(p_id, qty):
     try:
@@ -197,5 +201,3 @@ try:
         st.warning("Carga productos en la tabla 'productos' de Supabase.")
 except Exception as e:
     st.error(f"Error de conexión: {e}")
-
-
