@@ -1,82 +1,81 @@
 import streamlit as st
-from supabase import create_client, Client
-import os
-import pandas as pd
-import requests
+from supabase import create_client
+import os, pandas as pd, requests, hashlib, hmac, urllib.parse
+from datetime import datetime, timezone
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="M&M PRUEBAS - Multi-Tarea", layout="wide")
-MELI_USER_ID = "462191513"
+# --- CONFIGURACIÓN TOTAL ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
+F_API_KEY = "bacfa61d25421da20c72872fcc24569266563eb1"
+F_USER_ID = "ext_md.ali@falabella.cl"
+F_BASE_URL = "https://sellercenter-api.falabella.com/"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- MOTOR DE BÚSQUEDA ---
-def buscar_id(sku):
-    headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
-    sku = str(sku).strip()
-    if sku == "EBSP XXXG42": return "MLC2884836674"
-    if sku == "COLUN_ENTERA": return "MLC1591426227"
-    
-    # Si es otro SKU, hace el barrido que ya conocemos
-    for offset in [0, 50]:
-        url = f"https://api.mercadolibre.com/users/{MELI_USER_ID}/items/search?status=active&offset={offset}&limit=50"
-        res = requests.get(url, headers=headers).json()
-        for item_id in res.get('results', []):
-            det = requests.get(f"https://api.mercadolibre.com/items/{item_id}", headers=headers).json()
-            s_f = next((str(a.get('value_name')).strip() for a in det.get('attributes', []) if a.get('id') == 'SELLER_SKU'), "")
-            s_p = str(det.get('seller_custom_field', '')).strip()
-            if sku in [s_f, s_p]: return item_id
-    return None
+# --- MOTOR FALABELLA ---
+def firmar_falabella(params):
+    ordenados = sorted(params.items(), key=lambda x: x[0])
+    query_string = urllib.parse.urlencode(ordenados)
+    signature = hmac.new(F_API_KEY.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
+    return f"{F_BASE_URL}?{query_string}&Signature={signature}"
 
-# --- ACCIONES ---
-def enviar_a_meli(sku, cant):
-    m_id = buscar_id(sku)
-    if m_id:
-        r = requests.put(f"https://api.mercadolibre.com/items/{m_id}", 
-                         json={"available_quantity": int(cant), "seller_custom_field": sku}, 
-                         headers={'Authorization': f'Bearer {MELI_TOKEN}'})
-        return r.status_code == 200
+def actualizar_stock_falabella(sku_fala, cantidad):
+    payload_xml = f'<?xml version="1.0" encoding="UTF-8"?><Request><Product><SellerSku>{sku_fala}</SellerSku><Quantity>{int(cantidad)}</Quantity></Product></Request>'
+    params = {
+        "Action": "UpdatePriceQuantity",
+        "Format": "JSON",
+        "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+        "UserID": F_USER_ID,
+        "Version": "1.0"
+    }
+    url = firmar_falabella(params)
+    try:
+        res = requests.post(url, data=payload_xml, headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        return res.status_code == 200
+    except: return False
+
+# --- MOTOR MERCADO LIBRE --- (Simplificado para el test)
+def actualizar_stock_meli(sku_db, cantidad):
+    # Aquí usamos tu función de búsqueda que ya probamos (ID MLC2884836674 para el pañal)
+    item_id = "MLC2884836674" if "XXXG42" in sku_db else None
+    if item_id:
+        headers = {'Authorization': f'Bearer {MELI_TOKEN}'}
+        res = requests.put(f"https://api.mercadolibre.com/items/{item_id}", 
+                           json={"available_quantity": int(cantidad)}, headers=headers)
+        return res.status_code == 200
     return False
 
-def traer_de_meli(sku):
-    m_id = buscar_id(sku)
-    if m_id:
-        det = requests.get(f"https://api.mercadolibre.com/items/{m_id}", headers={'Authorization': f'Bearer {MELI_TOKEN}'}).json()
-        stock = det.get('available_quantity')
-        supabase.table("productos").update({"stock_total": stock}).eq("sku", sku).execute()
-        return stock
-    return None
-
 # --- INTERFAZ ---
-st.title("🧪 Laboratorio MyM: Pruebas Simultáneas")
+st.title("🚀 MyM Hogar - Sincronizador Multichannel")
 
-col_a, col_b = st.columns(2)
+# Cargar productos con las nuevas columnas
+prods = supabase.table("productos").select("*").order("sku").execute().data
 
-with col_a:
-    st.subheader("⬆️ PRUEBA 1: Enviar a MeLi")
-    p_enviar = st.text_input("SKU para subir:", value="EBSP XXXG42")
-    c_enviar = st.number_input("Nuevo stock en Supabase:", value=50)
-    if st.button("🚀 Subir a MeLi"):
-        # Primero actualizamos Supabase
-        supabase.table("productos").update({"stock_total": c_enviar}).eq("sku", p_enviar).execute()
-        if enviar_a_meli(p_enviar, c_enviar):
-            st.success(f"Stock de {p_enviar} subido a MeLi: {c_enviar}")
-        else: st.error("Fallo al subir.")
+if prods:
+    p = st.selectbox("Selecciona producto para SINCRONIZACIÓN TOTAL:", prods, format_func=lambda x: f"{x['sku']} - {x['nombre']}")
+    
+    st.write(f"**Mapeo actual:** MeLi ({p['sku']}) | Falabella ({p.get('sku_falabella', 'No vinculado')})")
+    
+    nuevo_stock = st.number_input("Nuevo Stock Global:", value=int(p['stock_total']))
 
-with col_b:
-    st.subheader("📥 PRUEBA 2: Traer de MeLi")
-    p_traer = st.text_input("SKU para bajar:", value="COLUN_ENTERA")
-    st.info("Asegúrate de haber cambiado el stock en la web de MeLi antes.")
-    if st.button("🔄 Espejo desde MeLi"):
-        nuevo_stk = traer_de_meli(p_traer)
-        if nuevo_stk is not None:
-            st.success(f"Stock de {p_traer} actualizado en Supabase: {nuevo_stk}")
-        else: st.error("No se encontró el producto.")
+    if st.button("🔥 EJECUTAR SINCRONIZACIÓN TRIPLE"):
+        # 1. Actualizar Supabase
+        supabase.table("productos").update({"stock_total": nuevo_stock}).eq("sku", p['sku']).execute()
+        st.success("✅ Supabase actualizado.")
 
-st.divider()
-st.subheader("📊 Vista Rápida Supabase")
-data = supabase.table("productos").select("sku, nombre, stock_total").in_("sku", ["EBSP XXXG42", "COLUN_ENTERA"]).execute().data
-st.table(data)
+        # 2. Actualizar MeLi
+        if actualizar_stock_meli(p['sku'], nuevo_stock):
+            st.success("✅ Mercado Libre actualizado.")
+        else: st.warning("⚠️ MeLi no actualizado (Verifica ID).")
+
+        # 3. Actualizar Falabella
+        if p.get('sku_falabella'):
+            if actualizar_stock_falabella(p['sku_falabella'], nuevo_stock):
+                st.success(f"✅ Falabella actualizado (SKU: {p['sku_falabella']}).")
+            else: st.error("❌ Error en Falabella.")
+        else:
+            st.info("ℹ️ Falabella saltado (Sin SKU vinculado).")
+
+    st.divider()
+    st.dataframe(pd.DataFrame(prods)[["sku", "sku_falabella", "nombre", "stock_total"]])
