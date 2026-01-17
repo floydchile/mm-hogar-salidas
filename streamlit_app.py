@@ -12,9 +12,9 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
 
 # WooCommerce Config
-WOO_URL = "https://tu-sitio-web.cl" # <--- CAMBIA ESTO
-WOO_CK = "ck_tu_clave_aqui"         # <--- CAMBIA ESTO
-WOO_CS = "cs_tu_clave_aqui"         # <--- CAMBIA ESTO
+WOO_URL = "https://mymhogar.com/" # <--- CAMBIA ESTO
+WOO_CK = "ck_1aefecde4415b41abdb3ebed3ee7e1e8e34bc008"         # <--- CAMBIA ESTO
+WOO_CS = "cs_f5b973b59a7fd8dfb27cf4c64e5478ddcf33eaec"         # <--- CAMBIA ESTO
 
 # Falabella Config
 F_API_KEY = "bacfa61d25421da20c72872fcc24569266563eb1"
@@ -98,3 +98,4 @@ if not df.empty:
 st.divider()
 st.subheader("🕵️ Detector de Ventas Falabella")
 # ... (aquí sigue el código del botón de ventas que ya teníamos)
+
