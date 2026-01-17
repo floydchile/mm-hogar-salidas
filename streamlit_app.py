@@ -59,8 +59,8 @@ def renovar_tokens_meli():
 
 # --- MOTOR WALMART CHILE (MIRAKL) ---
 def obtener_token_walmart():
-    # URL de Producción corregida para Walmart Chile
-    url = "https://marketplace.walmartchile.cl/api/v3/token"
+    # Usamos el endpoint directo de la infraestructura Mirakl para Walmart Chile
+    url = "https://walmartchile-prod.mirakl.net/api/v3/token"
     headers = {
         "WM_SVC.NAME": "Walmart Marketplace",
         "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
@@ -69,21 +69,48 @@ def obtener_token_walmart():
     }
     data = {"grant_type": "client_credentials"}
     try:
+        # Auth Basic con tus credenciales de Railway
         res = requests.post(url, data=data, auth=(WAL_CLIENT_ID, WAL_CLIENT_SECRET), headers=headers, timeout=15)
         if res.status_code == 200:
             return res.json().get("access_token")
         else:
-            # Reintento con endpoint directo de Mirakl si el principal falla
-            url_alt = "https://walmartchile-prod.mirakl.net/api/v3/token"
-            res = requests.post(url_alt, data=data, auth=(WAL_CLIENT_ID, WAL_CLIENT_SECRET), headers=headers, timeout=15)
-            if res.status_code == 200:
-                return res.json().get("access_token")
-            st.error(f"❌ Error Auth Walmart: {res.status_code}")
+            st.error(f"❌ Walmart Auth Error ({res.status_code}): {res.text}")
             return None
     except Exception as e:
-        st.error(f"❌ Error de conexión Walmart: {e}")
+        st.error(f"❌ Error Crítico conexión Walmart: {e}")
         return None
 
+def sync_walmart_stock(sku_w, qty):
+    token = obtener_token_walmart()
+    if not token: return False
+    
+    # Endpoint directo de inventario en infraestructura Mirakl
+    url = "https://walmartchile-prod.mirakl.net/api/v3/inventory"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "WM_SEC.ACCESS_TOKEN": token,
+        "WM_SVC.NAME": "Walmart Marketplace",
+        "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "sku": sku_w,
+        "quantity": {
+            "unit": "EACH",
+            "amount": int(qty)
+        }
+    }
+    try:
+        res = requests.put(url, json=payload, headers=headers, timeout=15)
+        if res.status_code in [200, 201]:
+            return True
+        else:
+            st.error(f"❌ Walmart Sync Error ({res.status_code}): {res.text}")
+            return False
+    except Exception as e:
+        st.error(f"❌ Excepción Walmart: {e}")
+        return False
 # --- MOTORES DE SINCRONIZACIÓN ---
 
 def sync_meli_stock(qty):
@@ -185,3 +212,4 @@ try:
         st.warning("Carga productos en la tabla 'productos' de Supabase.")
 except Exception as e:
     st.error(f"Error de conexión: {e}")
+
