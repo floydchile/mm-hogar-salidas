@@ -14,28 +14,32 @@ MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
 def sync_falabella(sku_f, qty):
     key = "bacfa61d25421da20c72872fcc24569266563eb1"
     user = "ext_md.ali@falabella.cl"
+    # URL específica que suelen usar para la API de carga en Chile
     url_base = "https://sellercenter-api.falabella.com/"
     
-    # Nueva estructura XML para PostOffers
-    xml = '<?xml version="1.0" encoding="UTF-8"?>'
-    xml += '<Offers>'
-    xml += '  <Offer>'
-    xml += '    <SellerSku>' + str(sku_f) + '</SellerSku>'
-    xml += '    <Quantity>' + str(int(qty)) + '</Quantity>'
-    xml += '  </Offer>'
-    xml += '</Offers>'
+    # XML simplificado al máximo
+    xml = '<?xml version="1.0" encoding="UTF-8"?><Request><Product><SellerSku>' + str(sku_f) + '</SellerSku><Quantity>' + str(int(qty)) + '</Quantity></Product></Request>'
     
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-    # Cambiamos la acción a PostOffers
-    params = {"Action": "PostOffers", "Format": "JSON", "Timestamp": ts, "UserID": user, "Version": "1.0"}
+    # En algunas cuentas de Chile, la acción es "FeedInsert" para stock
+    # Pero probaremos con "PostOffers" una vez más con un pequeño ajuste de versión
+    params = {
+        "Action": "UpdatePriceQuantity", 
+        "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+        "UserID": user,
+        "Version": "1.0",
+        "Format": "JSON"
+    }
     
     query = urllib.parse.urlencode(sorted(params.items()))
     sig = hmac.new(key.encode('utf-8'), query.encode('utf-8'), hashlib.sha256).hexdigest()
     
     try:
-        res = requests.post(f"{url_base}?{query}&Signature={sig}", data=xml, headers={'Content-Type': 'application/xml'})
+        # Intentamos la petición
+        full_url = url_base + "?" + query + "&Signature=" + sig
+        res = requests.post(full_url, data=xml, headers={'Content-Type': 'application/x-www-form-urlencoded'})
         return res.json()
-    except: return {"error": "Fallo de red"}
+    except Exception as e:
+        return {"error": str(e)}
 
 # --- LÓGICA DE INTERFAZ ---
 res_db = supabase.table("productos").select("*").execute()
@@ -72,4 +76,5 @@ if not df.empty:
                     st.error(f"❌ Falabella Error: {res_fala}")
             else:
                 st.info("ℹ️ Falabella saltado (sin SKU vinculado)")
+
 
