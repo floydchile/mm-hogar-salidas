@@ -1,39 +1,32 @@
-def enviar_stock_fala(sku, qty):
-    # Construcción quirúrgica: Sin llaves, sin f-strings, sin errores.
-    piezas = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<Request>',
-        '  <Product>',
-        '    <SellerSku>', str(sku), '</SellerSku>',
-        '    <Quantity>', str(int(qty)), '</Quantity>',
-        '  </Product>',
-        '</Request>'
-    ]
-    xml_data = "".join(piezas)
+import streamlit as st
+from supabase import create_client
+import os, pandas as pd, requests, hashlib, hmac, urllib.parse
+from datetime import datetime, timezone
+
+# 1. Configuración mínima
+st.set_page_config(page_title="MyM Rescate")
+st.title("📦 Centro de Control MyM")
+
+# 2. Conexión simple
+try:
+    supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    prods = supabase.table("productos").select("*").execute().data
+    st.success("Conectado a la base de datos")
+except Exception as e:
+    st.error(f"Error de conexión: {e}")
+    prods = []
+
+# 3. Interfaz ultra-limpia
+if prods:
+    df = pd.DataFrame(prods)
+    st.dataframe(df[["sku", "nombre", "stock_total"]])
     
-    params = {
-        "Action": "UpdatePriceQuantity",
-        "Format": "JSON",
-        "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-        "UserID": F_USER_ID,
-        "Version": "1.0"
-    }
-    
-    try:
-        url = firmar_fala(params)
-        # Probamos enviando el XML como texto plano, que es lo que menos errores da
-        res = requests.post(url, data=xml_data, headers={'Content-Type': 'application/xml'})
+    with st.form("update_form"):
+        st.write("### Actualizar Stock")
+        sku_input = st.selectbox("Producto", df["sku"].tolist())
+        nuevo_stock = st.number_input("Cantidad", value=0)
+        enviar = st.form_submit_state = st.form_submit_button("Sincronizar")
         
-        # Si la respuesta no es JSON, capturamos el error de texto
-        try:
-            data = res.json()
-        except:
-            return False, "Respuesta no-JSON: " + res.text[:50]
-        
-        if "SuccessResponse" in data:
-            return True, "OK"
-            
-        msg = data.get("ErrorResponse", {}).get("Head", {}).get("ErrorMessage", "Error")
-        return False, msg
-    except Exception as e:
-        return False, "Error de red: " + str(e)
+        if enviar:
+            st.info(f"Intentando actualizar {sku_input} a {nuevo_stock}...")
+            # Aquí agregaremos Falabella una vez que veas que esto funciona
