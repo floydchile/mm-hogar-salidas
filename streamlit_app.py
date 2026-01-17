@@ -14,29 +14,39 @@ MELI_TOKEN = os.getenv("MELI_ACCESS_TOKEN")
 def sync_falabella(sku_f, qty):
     key = "bacfa61d25421da20c72872fcc24569266563eb1"
     user = "ext_md.ali@falabella.cl"
-    # URL específica que suelen usar para la API de carga en Chile
     url_base = "https://sellercenter-api.falabella.com/"
     
-    # XML simplificado al máximo
-    xml = '<?xml version="1.0" encoding="UTF-8"?><Request><Product><SellerSku>' + str(sku_f) + '</SellerSku><Quantity>' + str(int(qty)) + '</Quantity></Product></Request>'
+    # ESTRUCTURA REQUERIDA POR FALABELLA CHILE (v500)
+    piezas = [
+        '<?xml version="1.0" encoding="UTF-8" ?>',
+        '<Request>',
+        '  <Product>',
+        '    <SellerSku>', str(sku_f), '</SellerSku>',
+        '    <BusinessUnits>',
+        '      <BusinessUnit>',
+        '        <OperatorCode>facl</OperatorCode>', # facl = Falabella Chile
+        '        <Stock>', str(int(qty)), '</Stock>',
+        '      </BusinessUnit>',
+        '    </BusinessUnits>',
+        '  </Product>',
+        '</Request>'
+    ]
+    xml_data = "".join(piezas)
     
-    # En algunas cuentas de Chile, la acción es "FeedInsert" para stock
-    # Pero probaremos con "PostOffers" una vez más con un pequeño ajuste de versión
     params = {
-        "Action": "UpdatePriceQuantity", 
+        "Action": "ProductUpdate", # <--- ESTA ES LA ACCIÓN CORRECTA
+        "Format": "JSON",
         "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
         "UserID": user,
-        "Version": "1.0",
-        "Format": "JSON"
+        "Version": "1.0"
     }
     
     query = urllib.parse.urlencode(sorted(params.items()))
     sig = hmac.new(key.encode('utf-8'), query.encode('utf-8'), hashlib.sha256).hexdigest()
     
     try:
-        # Intentamos la petición
-        full_url = url_base + "?" + query + "&Signature=" + sig
-        res = requests.post(full_url, data=xml, headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        url = url_base + "?" + query + "&Signature=" + sig
+        res = requests.post(url, data=xml_data, headers={'Content-Type': 'application/xml'})
         return res.json()
     except Exception as e:
         return {"error": str(e)}
@@ -76,5 +86,6 @@ if not df.empty:
                     st.error(f"❌ Falabella Error: {res_fala}")
             else:
                 st.info("ℹ️ Falabella saltado (sin SKU vinculado)")
+
 
 
