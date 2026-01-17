@@ -16,9 +16,18 @@ def sync_falabella(sku_f, qty):
     user = "ext_md.ali@falabella.cl"
     url_base = "https://sellercenter-api.falabella.com/"
     
-    xml = f'<?xml version="1.0" encoding="UTF-8"?><Request><Product><SellerSku>{sku_f}</SellerSku><Quantity>{int(qty)}</Quantity></Product></Request>'
+    # Nueva estructura XML para PostOffers
+    xml = '<?xml version="1.0" encoding="UTF-8"?>'
+    xml += '<Offers>'
+    xml += '  <Offer>'
+    xml += '    <SellerSku>' + str(sku_f) + '</SellerSku>'
+    xml += '    <Quantity>' + str(int(qty)) + '</Quantity>'
+    xml += '  </Offer>'
+    xml += '</Offers>'
+    
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-    params = {"Action": "UpdatePriceQuantity", "Format": "JSON", "Timestamp": ts, "UserID": user, "Version": "1.0"}
+    # Cambiamos la acción a PostOffers
+    params = {"Action": "PostOffers", "Format": "JSON", "Timestamp": ts, "UserID": user, "Version": "1.0"}
     
     query = urllib.parse.urlencode(sorted(params.items()))
     sig = hmac.new(key.encode('utf-8'), query.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -63,3 +72,4 @@ if not df.empty:
                     st.error(f"❌ Falabella Error: {res_fala}")
             else:
                 st.info("ℹ️ Falabella saltado (sin SKU vinculado)")
+
