@@ -97,4 +97,33 @@ try:
     df = pd.DataFrame(res_db.data)
     
     if not df.empty:
-        st.subheader("
+        st.subheader("📊 Inventario Maestro")
+        st.dataframe(df[["sku", "sku_falabella", "woo_id", "stock_total"]], use_container_width=True)
+        st.divider()
+        
+        st.subheader("🔄 Actualizar Stock Manual")
+        c1, c2 = st.columns(2)
+        with c1:
+            sku_sel = st.selectbox("Elegir Producto:", df["sku"].tolist())
+        with c2:
+            stk_val = st.number_input("Nuevo Stock Global:", min_value=0, step=1)
+
+        if st.button("🚀 Sincronizar Todo"):
+            p = df[df["sku"] == sku_sel].iloc[0]
+            # 1. DB
+            supabase.table("productos").update({"stock_total": stk_val}).eq("sku", sku_sel).execute()
+            st.success("✅ Supabase: OK")
+            # 2. MeLi
+            if "XXXG42" in str(sku_sel):
+                if sync_meli_stock(stk_val): st.success("✅ MeLi: OK")
+                else: st.error("❌ MeLi: Error")
+            # 3. Fala
+            if p.get("sku_falabella"):
+                if sync_fala_stock(p["sku_falabella"], stk_val): st.success("✅ Falabella: OK")
+            # 4. Web
+            if p.get("woo_id"):
+                if sync_woo_stock(p["woo_id"], stk_val): st.success("✅ Web: OK")
+    else:
+        st.warning("No hay productos.")
+except Exception as e:
+    st.error(f"Error: {e}")
