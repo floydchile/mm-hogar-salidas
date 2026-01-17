@@ -136,7 +136,7 @@ with st.sidebar:
             else: st.error("Usuario inválido")
 
 if not st.session_state.usuario_ingresado:
-    st.title("📦 M&M Hogar")
+    st.title("📦 M&M Hogar by LEPI")
     st.info("👋 Por favor ingresa tu usuario en el menú lateral.")
     st.stop()
 
@@ -207,3 +207,4 @@ with t4:
                 supabase.table("productos").insert({"sku": n_sku, "nombre": n_nom, "und_x_embalaje": n_und, "stock_total": 0}).execute()
                 st.success("Producto creado!")
                 st.rerun()
+
