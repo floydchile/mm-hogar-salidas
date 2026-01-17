@@ -43,8 +43,13 @@ def renovar_tokens_meli():
 
 # --- MOTOR WALMART (TOKEN TEMPORAL) ---
 def obtener_token_walmart():
-    # URL de producción oficial para Chile
-    url = "https://v3.walmartchile.cl/api/v3/token"
+    # Lista de URLs posibles para Walmart Chile (Mirakl)
+    urls_a_probar = [
+        "https://walmartchile-prod.mirakl.net/api/v3/token",
+        "https://marketplace.walmartchile.cl/api/v3/token",
+        "https://v3.walmartchile.cl/api/v3/token"
+    ]
+    
     headers = {
         "WM_SVC.NAME": "Walmart Marketplace",
         "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
@@ -52,28 +57,28 @@ def obtener_token_walmart():
         "Content-Type": "application/x-www-form-urlencoded"
     }
     data = {"grant_type": "client_credentials"}
-    try:
-        res = requests.post(url, data=data, auth=(WAL_CLIENT_ID, WAL_CLIENT_SECRET), headers=headers, timeout=15)
-        if res.status_code == 200:
-            return res.json().get("access_token")
-        else:
-            # Si esta URL falla, probamos la alternativa de respaldo
-            url_alt = "https://marketplace.walmartchile.cl/api-proxy/v3/token"
-            res = requests.post(url_alt, data=data, auth=(WAL_CLIENT_ID, WAL_CLIENT_SECRET), headers=headers, timeout=15)
+
+    for url in urls_a_probar:
+        try:
+            res = requests.post(url, data=data, auth=(WAL_CLIENT_ID, WAL_CLIENT_SECRET), headers=headers, timeout=10)
             if res.status_code == 200:
+                # Si funciona, guardamos esta URL exitosa para el siguiente paso
+                st.session_state['walmart_url_base'] = url.replace('/token', '')
                 return res.json().get("access_token")
-            st.error(f"⚠️ Walmart Auth Error: {res.status_code}")
-            return None
-    except Exception as e:
-        st.error(f"⚠️ Error de red Walmart: {e}")
-        return None
+        except:
+            continue # Si falla una, prueba la siguiente
+            
+    st.error("❌ No se pudo conectar con ningún servidor de Walmart. Revisa la URL en el portal de Sellers.")
+    return None
 
 def sync_walmart_stock(sku_w, qty):
     token = obtener_token_walmart()
-    if not token: return False
+    if not token or 'walmart_url_base' not in st.session_state: 
+        return False
     
-    # URL de producción para Inventario
-    url = f"https://v3.walmartchile.cl/api/v3/inventory?sku={sku_w}"
+    # Usamos la URL que funcionó en el paso anterior
+    url = f"{st.session_state['walmart_url_base']}/inventory?sku={sku_w}"
+    
     headers = {
         "Authorization": f"Bearer {token}",
         "WM_SEC.ACCESS_TOKEN": token,
@@ -82,15 +87,10 @@ def sync_walmart_stock(sku_w, qty):
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
-    payload = {
-        "sku": sku_w,
-        "quantity": {
-            "unit": "EACH",
-            "amount": int(qty)
-        }
-    }
+    payload = {"quantity": {"unit": "EACH", "amount": int(qty)}}
+    
     try:
-        res = requests.put(url, json=payload, headers=headers, timeout=15)
+        res = requests.put(url, json=payload, headers=headers, timeout=10)
         return res.status_code in [200, 201]
     except:
         return False
@@ -220,5 +220,6 @@ try:
         st.warning("Carga productos en Supabase primero.")
 except Exception as e:
     st.error(f"Error: {e}")
+
 
 
