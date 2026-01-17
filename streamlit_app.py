@@ -44,21 +44,58 @@ def renovar_tokens_meli():
 # --- MOTOR WALMART (TOKEN TEMPORAL) ---
 def obtener_token_walmart():
     url = "https://marketplace.walmartchile.cl/api/v3/token"
-    # Walmart requiere un ID de correlación único por llamada
-    correlation_id = str(uuid.uuid4())
+    # Walmart es muy estricto con el Content-Type en el token
     headers = {
         "WM_SVC.NAME": "Walmart Marketplace",
-        "WM_QOS.CORRELATION_ID": correlation_id,
+        "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
         "Accept": "application/json",
         "Content-Type": "application/x-www-form-urlencoded"
     }
     data = {"grant_type": "client_credentials"}
     try:
-        res = requests.post(url, data=data, auth=(WAL_CLIENT_ID, WAL_CLIENT_SECRET), headers=headers)
+        # Usamos auth basic con ID y SECRET
+        res = requests.post(url, data=data, auth=(WAL_CLIENT_ID, WAL_CLIENT_SECRET), headers=headers, timeout=10)
         if res.status_code == 200:
             return res.json().get("access_token")
+        else:
+            st.error(f"⚠️ Error Token Walmart: {res.status_code} - {res.text}")
+            return None
+    except Exception as e:
+        st.error(f"⚠️ Error Conexión Walmart Token: {e}")
         return None
-    except: return None
+
+def sync_walmart_stock(sku_w, qty):
+    token = obtener_token_walmart()
+    if not token: return False
+    
+    # URL de inventario
+    url = f"https://marketplace.walmartchile.cl/api/v3/inventory?sku={sku_w}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "WM_SEC.ACCESS_TOKEN": token, # Walmart Chile a veces pide redundancia
+        "WM_SVC.NAME": "Walmart Marketplace",
+        "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    # Estructura exacta que pide Walmart
+    payload = {
+        "sku": sku_w,
+        "quantity": {
+            "unit": "EACH",
+            "amount": int(qty)
+        }
+    }
+    try:
+        res = requests.put(url, json=payload, headers=headers, timeout=10)
+        if res.status_code in [200, 201]:
+            return True
+        else:
+            st.error(f"❌ Walmart Detalle: {res.status_code} - {res.text}")
+            return False
+    except Exception as e:
+        st.error(f"❌ Walmart Excepción: {e}")
+        return False
 
 # --- MOTORES DE SINCRONIZACIÓN (SALIDA) ---
 
@@ -156,3 +193,4 @@ try:
         st.warning("Carga productos en Supabase primero.")
 except Exception as e:
     st.error(f"Error: {e}")
+
