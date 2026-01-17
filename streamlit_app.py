@@ -107,55 +107,69 @@ if st.button("🔥 PROCESAR VENTAS NUEVAS"):
     with st.spinner("Leyendo órdenes de Falabella..."):
         data = obtener_pedidos_falabella()
         if data and "SuccessResponse" in data:
-            ordenes = data["SuccessResponse"]["Body"].get("Orders", [])
-            conteo = 0
+            body = data["SuccessResponse"].get("Body", {})
+            orders_container = body.get("Orders", {})
             
+            # La API de Falabella a veces pone las órdenes en una lista llamada 'Order'
+            # o directamente en 'Orders'. Esto lo normaliza:
+            ordenes = orders_container.get("Order", [])
+            
+            # Si solo hay una orden, Falabella no manda una lista [], manda un {}
+            # Esto lo convierte en lista para que el 'for' no falle:
+            if isinstance(ordenes, dict):
+                ordenes = [ordenes]
+            
+            conteo = 0
             for orden in ordenes:
-                id_fala = str(orden["OrderId"])
-                
-                # Verificar si ya procesamos esta orden
-                check = supabase.table("ventas_procesadas").select("*").eq("id_orden", id_fala).execute()
-                
-                if not check.data:
-                    # Buscamos el SKU dentro de la orden
-                    items = orden.get("OrderItems", [])
-                    if not items: continue
+                try:
+                    id_fala = str(orden["OrderId"])
                     
-                    # Extraemos el SKU de Falabella
-                    sku_f_vendido = items[0].get("SellerSku")
+                    # 1. ¿Ya procesamos esta orden?
+                    check = supabase.table("ventas_procesadas").select("*").eq("id_orden", id_fala).execute()
                     
-                    # Buscamos en nuestra base de datos quién es el dueño de ese SKU
-                    p_db = supabase.table("productos").select("*").eq("sku_falabella", sku_f_vendido).execute()
-                    
-                    if p_db.data:
-                        p = p_db.data[0]
-                        stk_actual = int(p["stock_total"])
-                        nuevo_stk = stk_actual - 1 if stk_actual > 0 else 0
+                    if not check.data:
+                        # 2. Extraer SKU de los ítems
+                        items_container = orden.get("OrderItems", {})
+                        items = items_container.get("OrderItem", [])
                         
-                        # 1. Registrar para no repetir
-                        supabase.table("ventas_procesadas").insert({
-                            "id_orden": id_fala, "marketplace": "falabella", "sku": p["sku"]
-                        }).execute()
+                        # Normalizar si es un solo ítem
+                        if isinstance(items, dict): items = [items]
+                        if not items: continue
                         
-                        # 2. Actualizar Supabase
-                        supabase.table("productos").update({"stock_total": nuevo_stk}).eq("sku", p["sku"]).execute()
+                        sku_f_vendido = items[0].get("SellerSku")
                         
-                        # 3. Actualizar Mercado Libre (Pañal)
-                        if "XXXG42" in p["sku"]:
-                            requests.put("https://api.mercadolibre.com/items/MLC2884836674", 
-                                        json={"available_quantity": nuevo_stk}, 
-                                        headers={'Authorization': f'Bearer {MELI_TOKEN}'})
+                        # 3. Buscar en Supabase
+                        p_db = supabase.table("productos").select("*").eq("sku_falabella", sku_f_vendido).execute()
                         
-                        # 4. Actualizar Falabella (para que el stock baje también allá)
-                        if p["sku_falabella"]:
-                            enviar_stock_falabella(p["sku_falabella"], nuevo_stk)
-                        
-                        st.warning(f"🚨 ¡Venta Detectada! Orden {id_fala}. SKU {p['sku']} bajó de {stk_actual} a {nuevo_stk}")
-                        conteo += 1
+                        if p_db.data:
+                            p = p_db.data[0]
+                            stk_actual = int(p.get("stock_total", 0))
+                            nuevo_stk = stk_actual - 1 if stk_actual > 0 else 0
+                            
+                            # A. Registrar memoria
+                            supabase.table("ventas_procesadas").insert({
+                                "id_orden": id_fala, "marketplace": "falabella", "sku": p["sku"]
+                            }).execute()
+                            
+                            # B. Actualizar Supabase
+                            supabase.table("productos").update({"stock_total": nuevo_stk}).eq("sku", p["sku"]).execute()
+                            
+                            # C. Actualizar MeLi (Pañal)
+                            if "XXXG42" in str(p["sku"]):
+                                requests.put(f"https://api.mercadolibre.com/items/MLC2884836674", 
+                                            json={"available_quantity": nuevo_stk}, 
+                                            headers={'Authorization': f'Bearer {MELI_TOKEN}'})
+                            
+                            st.warning(f"🚨 ¡Venta Procesada! Orden {id_fala}. SKU {p['sku']} bajó a {nuevo_stk}")
+                            conteo += 1
+                except Exception as e:
+                    st.error(f"Error procesando una orden: {e}")
+                    continue
             
             if conteo == 0:
-                st.info("No se encontraron ventas nuevas.")
+                st.info("No se encontraron ventas nuevas pendientes de procesar.")
             else:
                 st.success(f"Proceso terminado. {conteo} ventas sincronizadas.")
         else:
-            st.error("No se pudo conectar con la API de Falabella.")
+            st.error("No se pudo obtener respuesta válida de Falabella.")
+
